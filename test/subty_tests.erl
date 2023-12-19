@@ -704,3 +704,43 @@ simplification_10_test() ->
   true = is_equiv(S, T),
 
   ok.
+
+% debug subtype (((Any, Any) \ (`c, `d)) ((`c, Any \ `d) | (Any \ `c, Any)));;
+partition1_test() ->
+  V0 = tintersect([ttuple([tany(), tany()]), tnegate(ttuple([tatom(c), tatom(d)]))]),
+  V1 = tunion([
+    ttuple([tatom(c), tnegate(tatom(d))]),
+    ttuple([tnegate(tatom(c)), tany()])
+  ]),
+
+  true = is_equiv(V0, V1),
+  ok.
+
+% debug subtype (((Any, Any) \ ((`c, `d) | (`e, `f)) ((`c, Any \ `d) | (`e, Any \ `f) | (Any \ (`c | `e), Any)));;
+partition2_test() ->
+  V0 = tintersect([ttuple([tany(), tany()]), tnegate(tunion([ttuple([tatom(c), tatom(d)]), ttuple([tatom(e), tatom(f)])]))]),
+  V1 = tunion([
+    ttuple([tatom(c), tnegate(tatom(d))]),
+    ttuple([tatom(e), tnegate(tatom(f))]),
+    ttuple([tnegate(tunion([tatom(c), tatom(e)])), tany()])
+  ]),
+
+  true = is_equiv(V0, V1),
+  ok.
+
+partition3_test() ->
+  V0 = tunion([ttuple([tatom(a), tatom(a)]), ttuple([tatom(a), tnegate(tatom(a))]), ttuple([tnegate(tatom(a)), tany()])]),
+  V1 = ttuple([tany(), tany()]),
+  true = is_equiv(V0, V1),
+  ok.
+
+
+partition4_test() ->
+  V0 = tintersect([
+  ttuple([tany(), tany()]),
+  tnegate(ttuple([tatom(a), tatom(a)])),
+  tnegate(ttuple([tatom(a), tnegate(tatom(a))])),
+  tnegate(ttuple([tnegate(tatom(a)), tany()]))]),
+  V1 = tnone(),
+  true = is_equiv(V0, V1),
+  ok.
