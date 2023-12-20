@@ -28,7 +28,8 @@ union(?T, _) -> ?T;
 union(_, ?T) -> ?T;
 union(?B, B) -> B;
 union(B, ?B) -> B;
-union(A, B) -> make_disjoint(dim(A++B), order(A ++ B)).
+union(A, B) -> 
+  make_disjoint(dim(A++B), order(dim(A++B), A ++ B)).
 
 intersect(?T, B) -> B;
 intersect(B, ?T) -> B;
@@ -58,17 +59,8 @@ negate(1, Ts) ->
   1 = length(Res),
   Res;
 negate(2, A) ->
-  Res = lists:flatten(partition2({ty_rec:any(), ty_rec:any()}, A, [], ty_rec:empty())),
-  (lists:filter(fun
-    ({ty_tuple, 2, [_, {ty_ref, 1}]}) -> false;
-    ({ty_tuple, 2, [{ty_ref, 1}, _]}) -> false;
-    (_) -> true
-  end, Res))
-  ;
-  % % [T1, ..., Tn]  =neg=>  [T1', ..., Tn', Tn+1']
-  % Ordered = order(ResAll),
-  % % io:format(user,"Negate: ~p~nRESULT~p~n", [A, Ordered]),
-  % Ordered.
+  R = normal_cduce([_SingleCoClause = {_P = [{ty_rec:any(), ty_rec:any()}], _N = [{S, T} || {ty_tuple, 2, [S, T]} <- A]}]),
+  [{ty_tuple, 2, [T1, T2]} || {T1, T2} <- R];
 negate(Dim, A) ->
   error({todo, tuples, Dim}).
 
@@ -77,85 +69,22 @@ make_disjoint(_, []) -> [];
 make_disjoint(_, [X]) -> [X];
 make_disjoint(1, [Tup = {ty_tuple, 1, [_]} | Xs]) -> 
   [lists:foldl(fun({ty_tuple, 1, [E]}, {ty_tuple, 1, [T]}) -> {ty_tuple, 1, [ty_rec:union(E, T)]} end, Tup, Xs)];
-make_disjoint(2, Xs) -> 
-  SameLeft = merge_same_left(Xs, []),
-  SameRight = merge_same_right(SameLeft, []),
-  Disjoint = make_disj(SameRight, []),
-  % check_all(Disjoint),
-  Disjoint;
+make_disjoint(2, Res) -> Res;
 make_disjoint(_, Xs) -> error(todo).
 
 
-make_disj([], Accu) -> Accu;
-make_disj([X = {ty_tuple, 2, [L, R]} | Xs], Accu) -> 
-  case is_disjoint_from(X, Xs) of
-    true -> make_disj(Xs, [X | Accu]);
-    {false, Rem = {ty_tuple, 2, [Left, Right]}} -> 
-      Diff = ty_rec:intersect(L, Left),
-      make_disj([{ty_tuple, 2, [ty_rec:diff(L, Diff), R]}, {ty_tuple, 2, [ty_rec:diff(Left, Diff),Right]}, {ty_tuple, 2, [Diff, ty_rec:union(R, Right)]}] ++ (Xs -- [Rem]), Accu)
-  end.
-
-check_all([]) -> ok;
-check_all([X | Xs]) -> 
-  true = is_disjoint_from(X, Xs),
-  check_all(Xs).
-
-
-
-is_disjoint_from(X, []) -> true;
-is_disjoint_from(X = {ty_tuple, 2, [L, _]}, [Y = {ty_tuple, 2, [L2, _]} | Ts]) ->
-  case ty_rec:is_empty(ty_rec:intersect(L, L2)) of
-    true -> is_disjoint_from(X, Ts);
-    _ -> {false, Y}
-  end.
-  
-
-
-merge_same_left([], Accu) -> Accu;
-merge_same_left([TT = {ty_tuple, 2, [Left, _]} | Xs], Accu) -> 
-  Same = [T || T = {ty_tuple, 2, [L, _]} <- Xs, ty_rec:is_equivalent(Left, L)],
-  SameLeftTuples = lists:foldl(fun({ty_tuple, 2, [_, E]}, {ty_tuple, 2, [_, T]}) -> {ty_tuple, 2, [Left, ty_rec:union(E, T)]} end, TT, Same),
-  Others = Xs -- Same,
-  merge_same_left(Others, [SameLeftTuples | Accu]).
-
-merge_same_right([], Accu) -> Accu;
-merge_same_right([TT = {ty_tuple, 2, [_, Right]} | Xs], Accu) -> 
-  Same = [T || T = {ty_tuple, 2, [_, R]} <- Xs, ty_rec:is_equivalent(Right, R)],
-  SameRightTuples = lists:foldl(fun({ty_tuple, 2, [E, _]}, {ty_tuple, 2, [T, _]}) -> {ty_tuple, 2, [ty_rec:union(E, T), Right]} end, TT, Same),
-  Others = Xs -- Same,
-  merge_same_right(Others, [SameRightTuples | Accu]).
-
-partition2({T, S}, [], Accu, TUnion) ->
-  OneDnf = [{ty_tuple, 2, [ty_rec:diff(T, TUnion), S]}],
-  E = ty_rec:empty(),
-  case OneDnf of
-    {ty_tuple, 2, [E, _]} -> 
-      Accu;
-    {ty_tuple, 2, [_, E]} -> 
-      Accu;
-    _ -> 
-      Accu ++ OneDnf
-  end;
-partition2({T, S}, [N | Negs], Accu, TUnion) ->
-  {ty_tuple, 2, [T1, S1]} = N,
-  Dnf = {ty_tuple, 2, [ty_rec:intersect(T, T1), ty_rec:diff(S, S1)]},
-  E = ty_rec:empty(),
-  case Dnf of
-    {ty_tuple, 2, [E, _]} -> 
-      partition2({T, S}, Negs, [Accu], ty_rec:union(T1, TUnion));
-    {ty_tuple, 2, [_, E]} -> 
-      partition2({T, S}, Negs, [Accu], ty_rec:union(T1, TUnion));
-    _ -> 
-      partition2({T, S}, Negs, [Dnf | Accu], ty_rec:union(T1, TUnion))
-  end.
-
-order(X) -> lists:usort(X).
+order(1, X) -> lists:usort(X);
+order(2, X) -> 
+  Dnf = [{_Pi = [{S, T}], _Ni = []} || {ty_tuple, 2, [S, T]} <- X],
+  Res = normal_cduce(Dnf),
+  [{ty_tuple, 2, [T1, T2]} || {T1, T2} <- Res].
 
 dim([]) -> unknown;
 dim([{ty_tuple, Dim, _} | _]) ->
   Dim.
 
-diff(A, B) -> intersect(A, negate(B)).
+diff(A, B) -> 
+  intersect(A, negate(B)).
 
 all_variables(?T) -> [];
 all_variables(Dnf) ->
@@ -279,3 +208,112 @@ phi_norm(Size, BigS, [Ty | N], Fixed, M) ->
     ?F(lists:foldl(Solve, [[]], lists:zip(lists:seq(1, length(ty_tuple:components(Ty))), lists:zip(BigS, ty_tuple:components(Ty)))))
   ).
 
+
+
+
+
+
+
+% =================
+% CDuce code border
+
+
+normal_cduce(X) ->
+  cleanup(lists:foldl(fun line/2, [], X)).
+
+cleanup(L) ->
+  Aux = fun A({T1, T2}, Accu) ->
+    case Accu of
+      [] -> [{T1, T2}];
+      [{S1, S2} | Rem] -> 
+        case ty_rec:is_equivalent(T2, S2) of
+          true -> [{ty_rec:union(S1, T1), S2}| Rem];
+          _ -> [{S1, S2} | A({T1, T2}, Rem)]
+        end
+    end
+  end,
+  lists:foldl(Aux, [], L).
+
+bigcap(T1, T2, []) -> {T1, T2};
+bigcap(T1, T2, [{S1, S2} | Rem]) -> 
+  bigcap(ty_rec:intersect(T1, S1), ty_rec:intersect(T2, S2), Rem).
+
+line({P, N}, Accu) ->
+  {D1, D2} = bigcap(ty_rec:any(), ty_rec:any(), P),
+  case not (ty_rec:is_empty(D1) orelse ty_rec:is_empty(D2)) of
+    true -> 
+      Resid = make_ref(), put(Resid, ty_rec:empty()),
+      F = fun({T1, T2}, FAccu) -> 
+        I = ty_rec:intersect(D1, T1),
+        case not ty_rec:is_empty(I) of
+          true ->
+            put(Resid, ty_rec:union(get(Resid), T1)),
+            T2new = ty_rec:diff(D2, T2),
+            case not ty_rec:is_empty(T2new) of
+              true -> add([], I, T2new, FAccu);
+              _ -> FAccu 
+            end;
+          _ -> 
+            FAccu
+        end
+      end,
+
+      NewAccu = lists:foldl(F, Accu, normal(N)),
+      NewD1 = ty_rec:diff(D1, get(Resid)),
+      case not ty_rec:is_empty(NewD1) of
+        true -> add([], NewD1, D2, NewAccu);
+        _ -> NewAccu
+      end;
+    _ -> Accu
+  end.
+
+
+normal(X) ->
+  lists:foldl(fun({T1, T2}, Accu) -> 
+    add([], T1, T2, Accu) 
+  end, [], X).
+
+add(Root, T1, T2, []) ->
+  [{T1, T2} | Root];
+add(Root, T1, T2, [{S1, S2} | Rem]) ->
+  I = ty_rec:intersect(T1, S1),
+  case ty_rec:is_empty(I) of
+    true -> add([{S1, S2} | Root], T1, T2, Rem);
+    _ ->
+      NewRoot = [{I, ty_rec:union(T2, S2)} | Root],
+      K = ty_rec:diff(S1, T1),
+      NewRoot2 = case not ty_rec:is_empty(K) of
+        true -> [{K, S2} | NewRoot];
+        _ -> NewRoot
+      end,
+      J = ty_rec:diff(T1, S1),
+      case not ty_rec:is_empty(J) of
+        true -> add(NewRoot2, J, T2, Rem);
+        _ -> 
+          lists:reverse(Root) ++ Rem
+      end
+  end.
+
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+
+some_test() ->
+  test_utils:reset_ets(),
+  At = ast_lib:ast_to_erlang_ty(stdtypes:tatom()),
+  A = ast_lib:ast_to_erlang_ty(stdtypes:tatom(a)),
+  B = ast_lib:ast_to_erlang_ty(stdtypes:tatom(b)),
+
+  % R1 = normal_cduce([{[{A, A}], [{A, A}]}]),
+  % io:format(user,"Result: ~p~n", [R1]),
+
+  % R2 = normal_cduce([{[{At, At}], [{A, B}, {A, A}, {B, B}, {B, A}]}]),
+  % io:format(user,"Result: ~p~n", [R2]),
+
+
+
+
+  ok.
+
+-endif.

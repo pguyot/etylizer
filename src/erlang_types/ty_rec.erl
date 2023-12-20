@@ -42,9 +42,13 @@ print(Ref) -> pretty:render_ty(ast_lib:erlang_ty_to_ast(Ref)) .
 ty_of(Predef, Atom, Int, List, Tuple, Function) ->
   #ty{predef = Predef, atom = Atom, interval = Int, list = List, tuple = Tuple, function = Function}.
 
+is_subtype(TyRef1, {ty_ref, 0}) -> true;
+is_subtype({}, {ty_ref, 0}) -> true;
 is_subtype(TyRef1, TyRef2) ->
   NewTy = intersect(TyRef1, ty_rec:negate(TyRef2)),
-  is_empty(NewTy).
+  Res = is_empty(NewTy),
+  io:format(user, "Is subty?~p <: ~p = ~p~n", [TyRef1, TyRef2, Res]),
+  Res.
 
 is_equivalent(TyRef1, TyRef2) ->
   is_subtype(TyRef1, TyRef2) andalso is_subtype(TyRef2, TyRef1).

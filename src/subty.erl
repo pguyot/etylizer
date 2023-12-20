@@ -15,6 +15,8 @@ is_subty(_Symtab, T1, T2) ->
   H1 = ast_lib:ast_to_erlang_ty(T1),
   H2 = ast_lib:ast_to_erlang_ty(T2),
 
+  
+
   ty_rec:is_subtype(H1, H2).
 
 
