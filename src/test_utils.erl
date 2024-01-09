@@ -15,7 +15,8 @@
     is_subtype/2,
     reset_ets/0,
     ety_to_cduce_tally/2,
-    format_tally_config/2
+    format_tally_config/2,
+    mini_to_erlang_ty/1
 ]).
 
 -export_type([
@@ -146,6 +147,24 @@ to_cduce(Ast) ->
 to_var({var, Name}) ->
     "'" ++ string:replace(erlang:atom_to_list(Name), "$", "u").
 
+% mini erlang ty
+-spec mini_to_erlang_ty(term()) -> ty_rec:type().
+mini_to_erlang_ty(Ast) -> 
+    F = fun 
+        C(empty) -> stdtypes:tnone(); 
+        C(any) -> stdtypes:tany(); 
+        C({'!',A}) -> stdtypes:tnegate(C(A)); 
+        C({A,'|',B}) -> stdtypes:tunion([C(A), C(B)]); 
+        C({A,'&',B}) -> stdtypes:tintersect([C(A), C(B)]); 
+        C({}) -> stdtypes:ttuple([]); 
+        C({A}) -> stdtypes:ttuple([C(A)]); 
+        C({A,B}) -> stdtypes:ttuple([C(A), C(B)]); 
+        C(atom) -> stdtypes:tatom();
+        C(int) -> stdtypes:trange_any();
+        C(A) when is_atom(A) -> stdtypes:tatom(A);
+        C(A) when is_integer(A) -> stdtypes:trange(A, A) 
+    end,
+    ast_lib:ast_to_erlang_ty(F(Ast)).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

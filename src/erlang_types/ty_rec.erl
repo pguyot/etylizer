@@ -33,6 +33,9 @@
 -type ty_variable() :: term().
 -type ty_atom() :: term().
 
+-export_type([type/0]).
+-type type() :: term().
+
 
 % ======
 % top-level API

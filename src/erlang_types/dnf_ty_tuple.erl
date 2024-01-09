@@ -29,15 +29,30 @@ union(_, ?T) -> ?T;
 union(?B, B) -> B;
 union(B, ?B) -> B;
 union(A, B) -> 
-  make_disjoint(dim(A++B), order(dim(A++B), A ++ B)).
+  % can't just concatenate A++B, then the tuples are not disjoint anymore in the first component!
+  %make_disjoint(dim(A++B), order(dim(A++B), A ++ B)).
+  case dim(A ++ B) of
+    2 -> 
+      First = order(2, A),
+      Second = order(2, B),
+      error({First, Second, order(2, A ++ B)}),
+      make_disjoint(dim(A++B), order(dim(A++B), A ++ B)),
+      todo;
+    _ -> 
+      make_disjoint(dim(A++B), order(dim(A++B), A ++ B))
+  end.
+   
 
 intersect(?T, B) -> B;
 intersect(B, ?T) -> B;
 intersect(?B, _) -> ?B;
 intersect(_, ?B) -> ?B;
-intersect(A, A) -> A;
+% intersect(A, A) -> A;
 intersect(A, B) -> 
-  negate( union( negate(A), negate(B))).
+  Res = negate( T3 = union( T1 = negate(A), T2 = negate(B))),
+  io:format(user,"Left: ~p ~nRight: ~p ~nUnion ~p~n" ,[T1, T2, T3]),
+  io:format(user,"Intersect: ~p -> ~p~n" ,[{A, B}, Res]),
+  Res.
 
 negate(?T) -> ?B;
 negate(?B) -> ?T;
@@ -60,6 +75,7 @@ negate(1, Ts) ->
   Res;
 negate(2, A) ->
   R = normal_cduce([_SingleCoClause = {_P = [{ty_rec:any(), ty_rec:any()}], _N = [{S, T} || {ty_tuple, 2, [S, T]} <- A]}]),
+    io:format(user,"Negate: ~p -> ~p~n", [A, R]),
   [{ty_tuple, 2, [T1, T2]} || {T1, T2} <- R];
 negate(Dim, A) ->
   error({todo, tuples, Dim}).
@@ -298,20 +314,63 @@ add(Root, T1, T2, [{S1, S2} | Rem]) ->
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
+% conversion and projection for dnf_ty_tuple
+% pi(Ty, Rank) ->
+%   T = test_utils:mini_to_erlang_ty(Ty),
+%   % assume no variables
+%   [] = ty_rec:all_variables(T),
+%   {terminal, DnfTyTuple} = ty_rec:pi({tuple, Rank}, TyRef),
+%   DnfTyTuple.
 
-some_test() ->
+
+empty_any_2_test() ->
+  Ty = fun(T) -> test_utils:mini_to_erlang_ty(T) end,
   test_utils:reset_ets(),
-  At = ast_lib:ast_to_erlang_ty(stdtypes:tatom()),
-  A = ast_lib:ast_to_erlang_ty(stdtypes:tatom(a)),
-  B = ast_lib:ast_to_erlang_ty(stdtypes:tatom(b)),
+  N = fun(T) -> ty_rec:negate(T) end,
+  I = fun(S,T) -> ty_rec:intersect(S,T) end,
 
-  % R1 = normal_cduce([{[{A, A}], [{A, A}]}]),
-  % io:format(user,"Result: ~p~n", [R1]),
+  % E0 = Ty(empty),
+  % Any = Ty(any),
+  % E1 = Ty({empty, empty}),
+  % At = Ty({atom}),
+  A = Ty(a),
+  NA = Ty({'!', a}),
+  % B = Ty({b}),
 
-  % R2 = normal_cduce([{[{At, At}], [{A, B}, {A, A}, {B, B}, {B, A}]}]),
-  % io:format(user,"Result: ~p~n", [R2]),
+  % true = ty_rec:is_subtype(E1, E1),
+  % true = ty_rec:is_subtype(E1, Any),
+  % true = ty_rec:is_subtype(Any, Any),
+  % true = ty_rec:is_empty(E1),
+  % false = ty_rec:is_empty(Any),
+  % true = ty_rec:is_subtype(Any, N(E1)),
+  % true = ty_rec:is_empty(N(N(E1))),
+  % true = ty_rec:is_empty(I(E1, E1)),
+  % true = ty_rec:is_empty(I(E1, A)),
+
+  % part of de morgan
+  % Z1 = Ty(
+  %   {
+  %   {{{'!', a}, any}, '|', {a, {'!', a}}},
+  %   '&',
+  %   {a,a}
+  %   }
+  % ),
+  % true = ty_rec:is_empty(Z1),
+
+  io:format(user,"Line:~n~p~n", [line({[{A, A}], []}, [])]),
+  % de morgan
+  % ZZ = Ty({'!', {a, a}}),
+  % NZ = Ty({'!', {a, a}}),
+  % true = ty_rec:is_subtype(ZZ, NZ),
+  % true = ty_rec:is_subtype(NZ, ZZ),
+
+  % S = Ty({{a, '|', b}, c}),
+  % T = Ty({{a, c}, '|', {b, c}}),
+  % true = ty_rec:is_subtype(S, T),
 
 
+  % S = p(u(b(alpha), b(beta)), b(gamma)),
+  % T = u(p(b(alpha), b(gamma)), p(b(beta), b(gamma))),
 
 
   ok.
