@@ -171,6 +171,11 @@ case_01(X) ->
         _ -> foobar
     end.
 
+-spec case_01_noinfer() -> foobar.
+case_01_noinfer() ->
+  F = fun(X) -> case X of spam -> foobar; _ -> foobar end end,
+  F(spam).
+
 -spec case_02_fail(atom()) -> foobar.
 case_02_fail(X) ->
     case X of

@@ -16,29 +16,16 @@ tally(Constraints, FixedVars) ->
   Normalized = ?TIME(tally_normalize, tally_normalize(Constraints, FixedVars)),
   Saturated = ?TIME(tally_saturate, tally_saturate(Normalized, FixedVars)),
   Solved = ?TIME(tally_solve, tally_solve(Saturated, FixedVars)),
-  AllVariablesInC = constraint_set:get_variables(Constraints, sets:to_list(FixedVars)),
-  io:format(user, "~p~n", [AllVariablesInC]),
-  FreshSolved = refresh_substitutions(Solved, AllVariablesInC),
-  io:format(user, "NonFresh: ~p~n, Fresh: ~p~n", [Solved, FreshSolved]),
+  ?LOG_INFO("~p tally solution(s): ~n~s~n", length(Solved), print(Solved)),
   % sanity: every substitution satisfies all given constraints, if no error
   ?SANITY(substitutions_solve_input_constraints, case Solved of {error, _} -> ok; _ -> [ true = is_valid_substitution(Constraints, Subst) || Subst <- Solved] end),
-  FreshSolved.
+  Solved.
 
-refresh_substitutions([], _KnownVariables) -> [];
-refresh_substitutions([Sigma | Xs], KnownVariables) ->
-  [refresh_subst(Sigma, KnownVariables) | refresh_substitutions(Xs, KnownVariables)].
-
-refresh_subst(Sigma, Vars) ->
-  maps:from_list([{K, refresh_domain(V, Vars)} || {K, V} <- maps:to_list(Sigma)]).
-
-refresh_domain(Domain, Vars) ->
-  DVars = ty_rec:all_variables(Domain),
-  case sets:is_empty(sets:intersection(sets:from_list(DVars), sets:from_list(Vars))) of
-    true -> Domain;
-    false -> error(todo)
-  end.
-
-
+print(Sols) ->
+  lists:join("\n", [
+  "{" ++ lists:join(", ", [ty_rec:print(ty_rec:variable(V)) ++ " := " ++ ty_rec:print(T) || {V, T} <- maps:to_list(Sol)]) ++ "}"
+    || Sol <- Sols
+  ]).
 
 tally_normalize(Constraints, FixedVars) ->
   % TODO heuristic here and benchmark
@@ -66,8 +53,17 @@ tally_solve(Saturated, FixedVars) ->
   [ maps:from_list(Subst) || Subst <- Solved].
 
 solve(SaturatedSetOfConstraintSets, FixedVariables) ->
-  S = ([ solve_single(C, [], FixedVariables) || C <- SaturatedSetOfConstraintSets]),
+  S = ([ solve_single(prepare(C, FixedVariables), [], FixedVariables) || C <- SaturatedSetOfConstraintSets]),
   [ unify(E) || E <- S].
+
+
+% capture all possible variables in C, so that they can be substituted to a fresh variable in the solution space
+prepare(C, FixedVariables) ->
+  CapturedVars = [Var || {Var, _, _} <- C],
+  AllVars = lists:uniq(lists:flatten([ty_rec:all_variables(S) ++ ty_rec:all_variables(T) || {_, S, T} <- C])) -- sets:to_list(FixedVariables),
+  AddedConstraints = C ++ [{Var, ty_rec:empty(), ty_rec:any()} || Var <- AllVars -- CapturedVars],
+  SortedConstraints = lists:sort(fun({Var, _, _}, {Var2, _, _}) -> ty_variable:compare(Var, Var2) =< 0 end, AddedConstraints),
+  SortedConstraints.
 
 solve_single([], Equations, _) -> Equations;
 solve_single([{SmallestVar, Left, Right} | Cons], Equations, Fix) ->
