@@ -16,9 +16,29 @@ tally(Constraints, FixedVars) ->
   Normalized = ?TIME(tally_normalize, tally_normalize(Constraints, FixedVars)),
   Saturated = ?TIME(tally_saturate, tally_saturate(Normalized, FixedVars)),
   Solved = ?TIME(tally_solve, tally_solve(Saturated, FixedVars)),
+  AllVariablesInC = constraint_set:get_variables(Constraints, sets:to_list(FixedVars)),
+  io:format(user, "~p~n", [AllVariablesInC]),
+  FreshSolved = refresh_substitutions(Solved, AllVariablesInC),
+  io:format(user, "NonFresh: ~p~n, Fresh: ~p~n", [Solved, FreshSolved]),
   % sanity: every substitution satisfies all given constraints, if no error
   ?SANITY(substitutions_solve_input_constraints, case Solved of {error, _} -> ok; _ -> [ true = is_valid_substitution(Constraints, Subst) || Subst <- Solved] end),
-  Solved.
+  FreshSolved.
+
+refresh_substitutions([], _KnownVariables) -> [];
+refresh_substitutions([Sigma | Xs], KnownVariables) ->
+  [refresh_subst(Sigma, KnownVariables) | refresh_substitutions(Xs, KnownVariables)].
+
+refresh_subst(Sigma, Vars) ->
+  maps:from_list([{K, refresh_domain(V, Vars)} || {K, V} <- maps:to_list(Sigma)]).
+
+refresh_domain(Domain, Vars) ->
+  DVars = ty_rec:all_variables(Domain),
+  case sets:is_empty(sets:intersection(sets:from_list(DVars), sets:from_list(Vars))) of
+    true -> Domain;
+    false -> error(todo)
+  end.
+
+
 
 tally_normalize(Constraints, FixedVars) ->
   % TODO heuristic here and benchmark

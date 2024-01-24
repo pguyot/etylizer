@@ -4,7 +4,7 @@
 -export([set_of_constraint_sets/1, constraint_set/1, constraint/3, constraint/1, is_smaller/2]).
 -export([merge_and_meet/2, merge_and_join/2, has_smaller_constraint_w/2, has_smaller_constraint/2]).
 -export([meet/2, join/2, minimize/1]).
--export([saturate/3]).
+-export([saturate/3, get_variables/2]).
 
 % step 2. from merge phase
 % step 1. happens by construction automatically
@@ -54,6 +54,10 @@ join(S1, S2) ->
     [[]] -> [[]];
     _ -> merge_and_join(Res, S2())
   end.
+
+get_variables([], Delta) -> [];
+get_variables([{A, B} | Xs], Delta) ->
+  (ty_rec:all_variables(A) ++ ty_rec:all_variables(B)) -- Delta.
 
 merge_and_meet([], _Set2) -> [];
 merge_and_meet(_Set1, []) -> [];
