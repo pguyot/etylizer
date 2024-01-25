@@ -49,9 +49,7 @@ is_subtype(TyRef1, {ty_ref, 0}) -> true;
 is_subtype({}, {ty_ref, 0}) -> true;
 is_subtype(TyRef1, TyRef2) ->
   NewTy = intersect(TyRef1, ty_rec:negate(TyRef2)),
-  Res = is_empty(NewTy),
-  io:format(user, "Is subty?~p <: ~p = ~p~n", [TyRef1, TyRef2, Res]),
-  Res.
+  is_empty(NewTy).
 
 is_equivalent(TyRef1, TyRef2) ->
   is_subtype(TyRef1, TyRef2) andalso is_subtype(TyRef2, TyRef1).

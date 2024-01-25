@@ -33,11 +33,7 @@ union(A, B) ->
   %make_disjoint(dim(A++B), order(dim(A++B), A ++ B)).
   case dim(A ++ B) of
     2 -> 
-      First = order(2, A),
-      Second = order(2, B),
-      error({First, Second, order(2, A ++ B)}),
-      make_disjoint(dim(A++B), order(dim(A++B), A ++ B)),
-      todo;
+      make_disjoint(dim(A++B), order(dim(A++B), A ++ B));
     _ -> 
       make_disjoint(dim(A++B), order(dim(A++B), A ++ B))
   end.
@@ -49,10 +45,7 @@ intersect(?B, _) -> ?B;
 intersect(_, ?B) -> ?B;
 % intersect(A, A) -> A;
 intersect(A, B) -> 
-  Res = negate( T3 = union( T1 = negate(A), T2 = negate(B))),
-  io:format(user,"Left: ~p ~nRight: ~p ~nUnion ~p~n" ,[T1, T2, T3]),
-  io:format(user,"Intersect: ~p -> ~p~n" ,[{A, B}, Res]),
-  Res.
+  negate( T3 = union( T1 = negate(A), T2 = negate(B))).
 
 negate(?T) -> ?B;
 negate(?B) -> ?T;
@@ -75,7 +68,6 @@ negate(1, Ts) ->
   Res;
 negate(2, A) ->
   R = normal_cduce([_SingleCoClause = {_P = [{ty_rec:any(), ty_rec:any()}], _N = [{S, T} || {ty_tuple, 2, [S, T]} <- A]}]),
-    io:format(user,"Negate: ~p -> ~p~n", [A, R]),
   [{ty_tuple, 2, [T1, T2]} || {T1, T2} <- R];
 negate(Dim, A) ->
   error({todo, tuples, Dim}).
@@ -306,7 +298,8 @@ add(Root, T1, T2, [{S1, S2} | Rem]) ->
       case not ty_rec:is_empty(J) of
         true -> add(NewRoot2, J, T2, Rem);
         _ -> 
-          lists:reverse(Root) ++ Rem
+          %lists:reverse(NewRoot2) ++ Rem
+          lists:reverse(NewRoot2) ++ Rem
       end
   end.
 
@@ -329,23 +322,23 @@ empty_any_2_test() ->
   N = fun(T) -> ty_rec:negate(T) end,
   I = fun(S,T) -> ty_rec:intersect(S,T) end,
 
-  % E0 = Ty(empty),
-  % Any = Ty(any),
-  % E1 = Ty({empty, empty}),
-  % At = Ty({atom}),
+  E0 = Ty(empty),
+  Any = Ty(any),
+  E1 = Ty({empty, empty}),
+  At = Ty({atom}),
   A = Ty(a),
   NA = Ty({'!', a}),
-  % B = Ty({b}),
+  B = Ty({b}),
 
-  % true = ty_rec:is_subtype(E1, E1),
-  % true = ty_rec:is_subtype(E1, Any),
-  % true = ty_rec:is_subtype(Any, Any),
-  % true = ty_rec:is_empty(E1),
-  % false = ty_rec:is_empty(Any),
-  % true = ty_rec:is_subtype(Any, N(E1)),
-  % true = ty_rec:is_empty(N(N(E1))),
-  % true = ty_rec:is_empty(I(E1, E1)),
-  % true = ty_rec:is_empty(I(E1, A)),
+  true = ty_rec:is_subtype(E1, E1),
+  true = ty_rec:is_subtype(E1, Any),
+  true = ty_rec:is_subtype(Any, Any),
+  true = ty_rec:is_empty(E1),
+  false = ty_rec:is_empty(Any),
+  true = ty_rec:is_subtype(Any, N(E1)),
+  true = ty_rec:is_empty(N(N(E1))),
+  true = ty_rec:is_empty(I(E1, E1)),
+  true = ty_rec:is_empty(I(E1, A)),
 
   % part of de morgan
   % Z1 = Ty(
@@ -357,7 +350,6 @@ empty_any_2_test() ->
   % ),
   % true = ty_rec:is_empty(Z1),
 
-  io:format(user,"Line:~n~p~n", [line({[{A, A}], []}, [])]),
   % de morgan
   % ZZ = Ty({'!', {a, a}}),
   % NZ = Ty({'!', {a, a}}),
