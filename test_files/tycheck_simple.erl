@@ -529,7 +529,6 @@ inter_04_fail(L) ->
         [_X | XS] -> XS + 1 % ERROR ignored if branch ignored when type-checking
     end.
 
--spec foo([T]) -> [T].
 foo(L) ->
     case L of
         [] -> [];

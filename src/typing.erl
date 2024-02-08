@@ -5,7 +5,8 @@
     check/3,
     more_general/3,
     check_forms/4,
-    new_ctx/2
+    new_ctx/2,
+    ftv/1
 ]).
 
 -export_type([ctx/0]).

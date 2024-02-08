@@ -101,6 +101,11 @@ simp_constrs(Ctx, Cs) ->
       end,
       zero_simp_constrs_result(), Cs).
 
+fixed_from_env(Env) ->
+    R = [{Bound, sets:to_list(typing:ftv(Ty))} || {Ref, {ty_scheme, Bound, Ty}} <- maps:to_list(Env)],
+    R2 = lists:uniq(lists:flatten([All -- Bound || {Bound, All} <- R])),
+    sets:from_list(R2).
+
 -spec simp_constr(ctx(), constr:constr()) -> simp_constrs_result().
 simp_constr(Ctx, C) ->
     ?LOG_TRACE("simp_constr, C=~w", C),
@@ -145,17 +150,19 @@ simp_constr(Ctx, C) ->
                                pretty:render_ty(ExhauLeft),
                                pretty:render_ty(ExhauRight)),
                     Exhau = sets:from_list([{csubty, Locs, ExhauLeft, ExhauRight}]),
+                    MoreFixed = sets:union(fixed_from_env(Ctx#ctx.env), Fixed),
+
                     {Substs, Delta} =
                         utils:timing(
                             fun() ->
                                 lists:flatmap(
                                 fun(DsScrut) ->
                                         Ds = sets:union(DsScrut, Exhau),
-                                        get_substs(tally:tally(Ctx#ctx.symtab, Ds, Fixed), Locs)
+                                        get_substs(tally:tally(Ctx#ctx.symtab, Ds, MoreFixed), Locs)
                                 end,
                                 DssScrut)
                             end),
-                    ?LOG_TRACE("Env=~s", pretty:render_poly_env(Ctx#ctx.env)),
+                    ?LOG_DEBUG("Env=~s~nFixed=~p", pretty:render_poly_env(Ctx#ctx.env), MoreFixed),
                     case Substs of
                         [] ->
                             % a type error is returned later

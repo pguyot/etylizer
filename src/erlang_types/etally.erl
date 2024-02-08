@@ -16,7 +16,7 @@ tally(Constraints, FixedVars) ->
   Normalized = ?TIME(tally_normalize, tally_normalize(Constraints, FixedVars)),
   Saturated = ?TIME(tally_saturate, tally_saturate(Normalized, FixedVars)),
   Solved = ?TIME(tally_solve, tally_solve(Saturated, FixedVars)),
-  ?LOG_INFO("~p tally solution(s): ~n~s~n", length(Solved), print(Solved)),
+  % ?LOG_INFO("~p tally solution(s): ~n~s~n", length(Solved), print(Solved)),
   % sanity: every substitution satisfies all given constraints, if no error
   ?SANITY(substitutions_solve_input_constraints, case Solved of {error, _} -> ok; _ -> [ true = is_valid_substitution(Constraints, Subst) || Subst <- Solved] end),
   Solved.
