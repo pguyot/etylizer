@@ -132,7 +132,7 @@ exp_constrs(Ctx, E, T) ->
                                           ty_without(Alpha, ast_lib:mk_union(Lowers)),
                                           ScrutE,
                                           Clause,
-                                          Beta),
+                                          Beta, Alpha),
                                     {BodyList ++ [ThisConstrBody],
                                      Lowers ++ [ThisLower],
                                      Uppers ++ [ThisUpper],
@@ -253,9 +253,9 @@ exp_constrs(Ctx, E, T) ->
 -spec ty_without(ast:ty(), ast:ty()) -> ast:ty().
 ty_without(T1, T2) -> ast_lib:mk_intersection([T1, ast_lib:mk_negation(T2)]).
 
--spec case_clause_constrs(ctx(), ast:ty(), ast:exp(), ast:case_clause(), ast:ty())
+-spec case_clause_constrs(ctx(), ast:ty(), ast:exp(), ast:case_clause(), ast:ty(), ast:ty())
                          -> {ast:ty(), ast:ty(), constr:constrs(), constr:constr_case_body()}.
-case_clause_constrs(Ctx, TyScrut, Scrut, {case_clause, L, Pat, Guards, Exps}, Beta) ->
+case_clause_constrs(Ctx, TyScrut, Scrut, {case_clause, L, Pat, Guards, Exps}, Beta, ScrutVariable) ->
     {BodyLower, BodyUpper, BodyTi, BodyEnvCs, BodyEnv} =
         case_clause_env(Ctx, L, TyScrut, Scrut, Pat, Guards),
     {_, _, _, GuardEnvCs, GuardEnv} = case_clause_env(Ctx, L, TyScrut, Scrut, Pat, []),
@@ -268,7 +268,8 @@ case_clause_constrs(Ctx, TyScrut, Scrut, {case_clause, L, Pat, Guards, Exps}, Be
                     exps_constrs(Ctx, L, Guard, {predef_alias, boolean})
             end,
             Guards)),
-    ConstrBody = {mk_locs("case branch", L), {GuardEnv, CGuards}, {BodyEnv, InnerCs}, BodyTi},
+    BodyTiConstraint = single({csubty, mk_locs("Scrutinee Branch Constraint", L), ScrutVariable, BodyTi}),
+    ConstrBody = {mk_locs("case branch", L), {GuardEnv, CGuards}, {BodyEnv, InnerCs}, BodyTiConstraint},
     {BodyLower, BodyUpper, sets:union([BodyEnvCs, GuardEnvCs]), ConstrBody}.
 
 % helper function for case_clause_constrs
