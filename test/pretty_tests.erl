@@ -111,7 +111,7 @@ ex1_test() ->
   B = ast_lib:ast_to_erlang_ty(A),
   Pretty = ast_lib:erlang_ty_to_ast(B),
   true = subty:is_equivalent(none, A, Pretty),
-  ?assertEqual("$0 /\\ {b, tag} /\\ not({a, tag})", pretty:render_ty(Pretty)),
+  ?assertEqual("$0 /\\ {b, tag}", pretty:render_ty(Pretty)),
 
   ok.
 
@@ -197,7 +197,7 @@ other_test() ->
   Pretty = ast_lib:erlang_ty_to_ast(B),
 
   true = subty:is_equivalent(none, V0, Pretty),
-  ?assertEqual("{a5 /\\ b, int} | {a, int}", pretty:render_ty(Pretty)),
+  ?assertEqual("{a | a5 /\\ (a | b), int}", pretty:render_ty(Pretty)),
 
   ok.
 
@@ -210,6 +210,5 @@ var_condition_test() ->
   B = ast_lib:ast_to_erlang_ty(A),
   Pretty = ast_lib:erlang_ty_to_ast(B),
   true = subty:is_equivalent(none, A, Pretty),
-%%  ?assertEqual("{a5 /\\ b, int} | {a, int}", pretty:render_ty(Pretty)),
 
   ok.
