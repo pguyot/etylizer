@@ -1,7 +1,7 @@
 -module(subty_tests).
 -include_lib("eunit/include/eunit.hrl").
 
--import(stdtypes, [tvar/1, ttuple_any/0, tnegate/1, tatom/0, tatom/1, tfun_full/2, trange/2, tunion/1, tintersect/1, trange_any/0, ttuple/1, tany/0, tnone/0]).
+-import(stdtypes, [tfloat/0, tvar/1, ttuple_any/0, tnegate/1, tatom/0, tatom/1, tfun_full/2, trange/2, tunion/1, tintersect/1, trange_any/0, ttuple/1, tany/0, tnone/0]).
 -import(test_utils, [is_subtype/2, is_equiv/2]).
 
 a(A, B) -> {fun_full, [A], B}.
@@ -743,3 +743,80 @@ distributivity_test() ->
 %   V1 = tnone(),
 %   true = is_equiv(V0, V1),
 %   ok.
+
+
+bdd_redundant_negations_test() ->
+  ecache:reset_all(),
+
+  A1 = tvar(a1),
+  A2 = tvar(a2),
+  A3 = tvar(a3),
+  A4 = tvar(a4),
+
+  X = ttuple([tfloat()]),
+  XBigger = ttuple([tunion([tfloat(), A3])]),
+  XSmallerBigger = ttuple([tunion([tfloat(), tintersect([A3, A4])])]),
+  V0 = 
+  tunion([
+    tintersect([tnegate(A1),     X]),
+    tintersect([tnegate(A2), A1, XSmallerBigger]),
+    tintersect([             A2, XBigger])
+  ]),
+  V1 = 
+  tunion([
+    tintersect([    X]),
+    tintersect([A1, XSmallerBigger]),
+    tintersect([A2, XBigger])
+  ]),
+  % io:format(user,"Pretty:~n~s~n", [ty_rec:print(ast_lib:ast_to_erlang_ty(V0))]),
+  % io:format(user,"Pretty:~n~s~n", [ty_rec:print(ast_lib:ast_to_erlang_ty(V1))]),
+  true = is_equiv(V0, V1),
+  ok.
+
+bdd_redundant_negations2_test() ->
+  ecache:reset_all(),
+
+  A1 = tvar(a1),
+  A2 = tvar(a2),
+  A3 = tvar(a3),
+
+  X = ttuple([tfloat()]),
+  XBigger = ttuple([tunion([tfloat(), A3])]),
+  V0 = 
+  tunion([
+    tintersect([tnegate(A1),     X]),
+    tintersect([tnegate(A2), A1, XBigger]),
+    tintersect([             A2, XBigger])
+  ]),
+  V1 = 
+  tunion([
+    tintersect([    X]),
+    tintersect([A1, XBigger]),
+    tintersect([A2, XBigger])
+  ]),
+  % io:format(user,"Pretty:~n~s~n", [ty_rec:print(ast_lib:ast_to_erlang_ty(V0))]),
+  % io:format(user,"Pretty:~n~s~n", [ty_rec:print(ast_lib:ast_to_erlang_ty(V1))]),
+  true = is_equiv(V0, V1),
+  ok.
+
+bdd_redundant_negations3_test() ->
+  ecache:reset_all(),
+
+  A1 = tvar(a1),
+  A2 = tvar(a2),
+  A3 = tvar(a3),
+
+  X = ttuple([tunion([tfloat(), A3])]),
+  V0 = 
+  tunion([
+    tintersect([tnegate(A2), A1, X]),
+    tintersect([             A2, X])
+  ]),
+  V1 = 
+  tunion([
+    tintersect([tunion([A1, A2]), X])
+  ]),
+  % io:format(user,"Pretty:~n~s~n", [ty_rec:print(ast_lib:ast_to_erlang_ty(V0))]),
+  % io:format(user,"Pretty:~n~s~n", [ty_rec:print(ast_lib:ast_to_erlang_ty(V1))]),
+  true = is_equiv(V0, V1),
+  ok.

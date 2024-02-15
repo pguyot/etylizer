@@ -80,7 +80,7 @@ check_forms(Ctx, FileName, Forms, Only) ->
                                       {ok, Ty} -> {[{Form, Ty} | With], Without, [X | Knowns]}
                                   end;
                               false ->
-                                  ?LOG_DEBUG("~s: not type checking function ~s as requested",
+                                  ?LOG_TRACE("~s: not type checking function ~s as requested",
                                              ast:format_loc(Loc), RefStr),
                                   {With, Without, [X | Knowns]}
                           end;
