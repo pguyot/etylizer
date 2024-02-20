@@ -5,7 +5,7 @@
 -define(F(Z), fun() -> Z end).
 
 -export([is_empty/1, normalize/6, substitute/4, apply_to_node/3]).
--export([tuple/1, all_variables/1, transform/2]).
+-export([tuple/1, all_variables/1, transform/3, transform/2]).
 
 -include("bdd_node.hrl").
 

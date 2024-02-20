@@ -211,6 +211,12 @@ ast_to_erlang_ty({binary, _, _}) ->
 
 ast_to_erlang_ty({tuple_any}) ->
     ty_rec:tuple();
+ast_to_erlang_ty({tuple, [A,B,C,D]}) ->
+    LeftTupleTy = ast_to_erlang_ty({tuple, [A,B]}),
+    RightTupleTy = ast_to_erlang_ty({tuple, [C,D]}),
+
+    ComposedTuple = dnf_var_ty_tuple:tuple(dnf_ty_tuple:tuple(ty_tuple:tuple([LeftTupleTy, RightTupleTy]))),
+    ty_rec:tuple(4, ComposedTuple);
 ast_to_erlang_ty({tuple, Comps}) when is_list(Comps)->
     ETy = lists:map(fun(T) -> ast_to_erlang_ty(T) end, Comps),
 

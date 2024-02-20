@@ -704,3 +704,23 @@ simplification_10_test() ->
   true = is_equiv(S, T),
 
   ok.
+
+tuple_4_test() ->
+  S =
+  ttuple([tatom(a),tatom(b),tatom(c),tatom(d)]),
+  T =
+  ttuple([tatom(),tatom(),tany(),tatom()]),
+  true = is_subtype(S, T),
+  false = is_subtype(T, S),
+
+  ok.
+
+tuple_4_diff_test() ->
+  S =
+  ttuple([tatom(a),tatom(b),tatom(c),tatom(d)]),
+  T =
+  ttuple([ttuple([tatom(a),tatom(b)]),ttuple([tatom(c),tatom(d)])]),
+  false = is_subtype(T, S),
+  false = is_subtype(S, T),
+
+  ok.

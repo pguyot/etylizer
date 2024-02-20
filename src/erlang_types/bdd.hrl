@@ -13,7 +13,9 @@
 % hide built-in Erlang node function
 -compile({no_auto_import, [node/1]}).
 
--export([has_ref/2, get_dnf/1, any/0, empty/0, equal/2, node/1, terminal/1, compare/2, union/2, intersect/2, negate/1, diff/2]).
+% TODO where is transform/2 exported???
+% TODO same for tlv and all_variables
+-export([tlv/1, transform/3, has_ref/2, get_dnf/1, any/0, empty/0, equal/2, node/1, terminal/1, compare/2, union/2, intersect/2, negate/1, diff/2]).
 
 % these are defined here so the IDE does not complain
 -ifndef(ELEMENT).
@@ -186,6 +188,15 @@ has_ref(Ty, Ref) ->
     fun(F1, F2) -> F1() orelse F2() end
   }).
 
+tlv(Ty) ->
+  dnf(Ty, {
+    fun
+      (P,N,T) ->
+          lists:foldl(fun(L, Acc) -> Acc ++ ?ELEMENT:all_variables(L) end, [], P) ++
+          lists:foldl(fun(L, Acc) -> Acc ++ ?ELEMENT:all_variables(L) end, [], N)
+    end,
+    fun(F1, F2) -> lists:usort(F1() ++ F2()) end
+  }).
 all_variables(Ty) ->
   dnf(Ty, {
     fun
@@ -205,6 +216,19 @@ transform(Ty, Ops = #{negate := Negate, intersect := Intersect, union := Union})
         P1 = ?TERMINAL:transform(T, Ops),
         P2 = [?ELEMENT:transform(V, Ops) || V <- P],
         P3 = [Negate(?ELEMENT:transform(V, Ops)) || V <- N],
+        Intersect([P1] ++ P2 ++ P3)
+    end,
+    fun(F1, F2) -> Union([F1(), F2()]) end
+  }).
+
+
+transform(Length, Ty, Ops = #{negate := Negate, intersect := Intersect, union := Union}) ->
+  dnf(Ty, {
+    fun
+      (P,N,T) ->
+        P1 = ?TERMINAL:transform(Length, T, Ops),
+        P2 = [?ELEMENT:transform(Length, V, Ops) || V <- P],
+        P3 = [Negate(?ELEMENT:transform(Length, V, Ops)) || V <- N],
         Intersect([P1] ++ P2 ++ P3)
     end,
     fun(F1, F2) -> Union([F1(), F2()]) end

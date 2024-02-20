@@ -213,3 +213,29 @@ var_condition_test() ->
 %%  ?assertEqual("{a5 /\\ b, int} | {a, int}", pretty:render_ty(Pretty)),
 
   ok.
+
+
+pretty_tuple4_test() ->
+  ecache:reset_all(),
+  S = ttuple([tatom(a),tatom(b),tatom(c),tatom(d)]),
+  T = ttuple([tatom(),tatom(),tany(),tatom()]),
+  ST = tintersect([S,T]),
+
+  SB = ast_lib:ast_to_erlang_ty(S),
+  SPretty = ast_lib:erlang_ty_to_ast(SB),
+  true = subty:is_equivalent(none, S, SPretty),
+
+  TB = ast_lib:ast_to_erlang_ty(T),
+  TPretty = ast_lib:erlang_ty_to_ast(TB),
+  true = subty:is_equivalent(none, T, TPretty),
+
+
+  STB = ast_lib:ast_to_erlang_ty(ST),
+  io:format(user, "~p~n", [STB]),
+  STPretty = ast_lib:erlang_ty_to_ast(STB),
+  true = subty:is_equivalent(none, ST, STPretty),
+
+  io:format(user, "~s~n", [pretty:render_ty(STPretty)]),
+  ?assertEqual("{a, b, c, d}", pretty:render_ty(SPretty)),
+
+  ok.
