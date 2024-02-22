@@ -198,6 +198,11 @@ extract_variables(ETy, [Var | OtherVars], ExtractedVars) ->
             extract_variables(ETy, OtherVars, ExtractedVars)
     end.
 
+splitIntoProducts([X]) -> X;
+splitIntoProducts([X | Xs]) ->
+    Split = splitIntoProducts(Xs),
+    ty_rec:tuple(2, dnf_var_ty_tuple:tuple(dnf_ty_tuple:tuple(ty_tuple:tuple([X, Split])))).
+
 ast_to_erlang_ty({singleton, Atom}) when is_atom(Atom) ->
     TyAtom = ty_atom:finite([Atom]),
     TAtom = dnf_var_ty_atom:ty_atom(TyAtom),
@@ -211,11 +216,17 @@ ast_to_erlang_ty({binary, _, _}) ->
 
 ast_to_erlang_ty({tuple_any}) ->
     ty_rec:tuple();
-ast_to_erlang_ty({tuple, Comps}) when is_list(Comps)->
+ast_to_erlang_ty({tuple, []}) -> error(todo0), ty_rec:tuple(0, dnf_var_bool:bool(bdd_bool:any())); % TODO
+ast_to_erlang_ty({tuple, [X]}) -> error(todo1), ty_rec:tuple(1, dnf_var_ty_ref:ref(X)); % TODO
+ast_to_erlang_ty({tuple, Comps = [_, _]}) ->
     ETy = lists:map(fun(T) -> ast_to_erlang_ty(T) end, Comps),
-
     T = dnf_var_ty_tuple:tuple(dnf_ty_tuple:tuple(ty_tuple:tuple(ETy))),
     ty_rec:tuple(length(Comps), T);
+ast_to_erlang_ty({tuple, Cs}) ->
+    % X is the first component
+    AllComponentsAsRefs = [ast_to_erlang_ty(C) || C <- Cs],
+    Ok = splitIntoProducts(AllComponentsAsRefs),
+    ty_rec:tuple(length(Cs), dnf_var_ty_tuple:tuple(dnf_ty_tuple:tuple(ty_tuple:tuple([ty_rec:any(), Ok])))); % TODO cleaner
 
 % funs
 ast_to_erlang_ty({fun_simple}) ->
