@@ -213,3 +213,56 @@ var_condition_test() ->
 %%  ?assertEqual("{a5 /\\ b, int} | {a, int}", pretty:render_ty(Pretty)),
 
   ok.
+
+tuple2_intersect_test() ->
+  ecache:reset_all(),
+  A = tintersect([
+    ttuple([(tatom(a)), tatom(c)]),
+    ttuple([(tatom()), (tatom(c))])
+  ]),
+  B = ast_lib:ast_to_erlang_ty(A),
+  Pretty = ast_lib:erlang_ty_to_ast(B),
+  true = subty:is_equivalent(none, A, Pretty),
+  ?assertEqual("{a, c}", pretty:render_ty(Pretty)),
+
+  ok.
+
+tuple2_union_test() ->
+  ecache:reset_all(),
+  A = tunion([
+    ttuple([(tatom(a)), tatom(c)]),
+    ttuple([(tatom()), (tatom(c))])
+  ]),
+  B = ast_lib:ast_to_erlang_ty(A),
+  Pretty = ast_lib:erlang_ty_to_ast(B),
+  true = subty:is_equivalent(none, A, Pretty),
+  ?assertEqual("{atom(), c}", pretty:render_ty(Pretty)),
+
+  ok.
+
+
+tuple3_intersect_test() ->
+  ecache:reset_all(),
+  A = tintersect([
+    ttuple([(tatom(a)), tatom(c), tatom(d)]),
+    ttuple([(tatom()), (tatom(c)), tatom()])
+  ]),
+  B = ast_lib:ast_to_erlang_ty(A),
+  Pretty = ast_lib:erlang_ty_to_ast(B),
+  true = subty:is_equivalent(none, A, Pretty),
+  ?assertEqual("{a | atom(), c}", pretty:render_ty(Pretty)),
+
+  ok.
+
+tuple3_union_test() ->
+  ecache:reset_all(),
+  A = tunion([
+    ttuple([(tatom(a)), tatom(c), tatom(d)]),
+    ttuple([(tatom(e)), (tatom(f)), tatom(g)])
+  ]),
+  B = ast_lib:ast_to_erlang_ty(A),
+  Pretty = ast_lib:erlang_ty_to_ast(B),
+  true = subty:is_equivalent(none, A, Pretty),
+  ?assertEqual("{a | atom(), c}", pretty:render_ty(Pretty)),
+
+  ok.

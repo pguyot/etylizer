@@ -22,7 +22,7 @@
 
 -export([substitute/2, substitute/3, pi/2, all_variables/1]).
 
--export([transform/2, print/1]).
+-export([transform/2, print/1, unwrap_tuple/2]).
 
 -record(ty, {predef, atom, interval, list, tuple, function}).
 
@@ -33,6 +33,35 @@
 -type ty_variable() :: term().
 -type ty_atom() :: term().
 
+
+
+sanity(Ty) ->
+  #ty{ predef = P, atom = A, interval = Ints, list = Lists, tuple = {DefaultT, AllTuples}, function = {DefaultF, AllFunctions} } = Ty,
+  P = dnf_var_predef:empty(),
+  A = dnf_var_ty_atom:empty(),
+  Ints = dnf_var_int:empty(),
+  Lists = dnf_var_ty_list:empty(),
+  DefaultT = dnf_var_ty_tuple:empty(),
+  DefaultF = dnf_var_ty_function:empty(),
+  [] = maps:keys(AllFunctions),
+  [2] = maps:keys(AllTuples).
+
+unwrap_tuple(RRef, Dim) ->
+
+  Unwrap = fun(_Index, {Comps, Ref}) -> 
+    Ty = #ty{ tuple = {_, #{2 := T}} } = ty_ref:load(Ref),
+    sanity(Ty),
+    % no variables, fixed tuple representation?
+    {terminal, {node, Tuple, {terminal, 1}, {terminal, 0}}} = T,
+    A = ty_tuple:pi(1, Tuple),
+    B = ty_tuple:pi(2, Tuple),
+    {Comps ++ [A], B}
+  end,
+
+  {Comps, Last} = lists:foldl(Unwrap, {[], RRef}, lists:seq(2, Dim)),
+
+  error({todo, Comps ++ [Last]}),
+  ok.
 
 % ======
 % top-level API
@@ -285,11 +314,11 @@ maybe_remove_redundant_negative_variables(CurrentMap, T1, T, Pv, Nv, Pv1, Nv1) -
 
 multi_transform(DefaultT, T, Ops = #{any_tuple_i := Tuple, any_tuple := Tuples, negate := Negate, union := Union, intersect := Intersect}) ->
   X1 = dnf_var_ty_tuple:transform(DefaultT, Ops),
-  Xs = lists:map(fun({_Size, Tup}) ->
+  Xs = lists:map(fun({Size, Tup}) ->
     % if a tuple is semantically equivalent to empty, return empty instead of the empty tuple
     case dnf_var_ty_tuple:is_empty(Tup) of
       true -> dnf_var_ty_tuple:transform(dnf_var_ty_tuple:empty(), Ops);
-      _ -> dnf_var_ty_tuple:transform(Tup, Ops)
+      _ -> dnf_var_ty_tuple:transform(Tup, Ops#{tuple_dim => Size})
     end
                  end, maps:to_list(T)),
   Sizes = maps:keys(T),
