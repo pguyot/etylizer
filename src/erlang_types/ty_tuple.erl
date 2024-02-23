@@ -28,7 +28,7 @@ transform({ty_tuple, _, Refs}, #{to_tuple := ToTuple, tuple_dim := Dim}) ->
     % A is any
     AllTuplesComponentsAsRefs = ty_rec:unwrap_tuple(B, Dim),
     
-    error({todo_dim, Refs, ty_ref:load(B)});
+    ToTuple(AllTuplesComponentsAsRefs);
 transform({ty_tuple, _, Refs}, #{to_tuple := ToTuple}) ->
     ToTuple(Refs).
 

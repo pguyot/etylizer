@@ -60,8 +60,7 @@ unwrap_tuple(RRef, Dim) ->
 
   {Comps, Last} = lists:foldl(Unwrap, {[], RRef}, lists:seq(2, Dim)),
 
-  error({todo, Comps ++ [Last]}),
-  ok.
+  Comps ++ [Last].
 
 % ======
 % top-level API

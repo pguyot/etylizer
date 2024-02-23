@@ -263,6 +263,6 @@ tuple3_union_test() ->
   B = ast_lib:ast_to_erlang_ty(A),
   Pretty = ast_lib:erlang_ty_to_ast(B),
   true = subty:is_equivalent(none, A, Pretty),
-  ?assertEqual("{a | atom(), c}", pretty:render_ty(Pretty)),
+  ?assertEqual("{a, c, d} | {e, f, g}", pretty:render_ty(Pretty)),
 
   ok.
