@@ -23,10 +23,9 @@ has_ref({ty_tuple, _, Refs}, Ref) -> length([X || X <- Refs, X == Ref]) > 0.
 is_empty({ty_tuple, _, Refs}) ->
     lists:any(fun(T) -> ty_rec:is_empty(T) end, Refs).
 
-transform({ty_tuple, _, Refs}, #{to_tuple := ToTuple, tuple_dim := Dim}) ->
-    [_A, B] = Refs,
-    % A is any
-    AllTuplesComponentsAsRefs = ty_rec:unwrap_tuple(B, Dim),
+transform(Tup = {ty_tuple, _, Refs}, #{to_tuple := ToTuple, tuple_dim := Dim}) ->
+    % [A, B] = Refs,
+    AllTuplesComponentsAsRefs = ty_rec:unwrap_tuple(ty_rec:tuple(2, dnf_var_ty_tuple:tuple(dnf_ty_product:tuple(Tup))), Dim),
     
     ToTuple(AllTuplesComponentsAsRefs);
 transform({ty_tuple, _, Refs}, #{to_tuple := ToTuple}) ->

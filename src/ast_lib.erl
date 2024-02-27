@@ -198,10 +198,18 @@ extract_variables(ETy, [Var | OtherVars], ExtractedVars) ->
             extract_variables(ETy, OtherVars, ExtractedVars)
     end.
 
-splitIntoProducts([X]) -> X;
-splitIntoProducts([X | Xs]) ->
-    Split = splitIntoProducts(Xs),
-    ty_rec:tuple(2, dnf_var_ty_tuple:tuple(dnf_ty_tuple:tuple(ty_tuple:tuple([X, Split])))).
+    %[a,b,c] 3
+splitIntoProducts([X = {ty_ref, _}], _) -> X;
+splitIntoProducts([X | Xs], 0) ->
+    Split = splitIntoProducts(Xs, 0),
+    ty_rec:tuple(2, dnf_var_ty_tuple:tuple(dnf_ty_product:tuple(ty_tuple:tuple([X, Split]))));
+splitIntoProducts([X | Xs], Dim) when Dim /= 2 ->
+    Split = splitIntoProducts(Xs, 0),
+    io:format(user,"Got lower split: ~p~n", [Split]),
+    io:format(user,"Creating tuple with all: ~p~n", [Dim]),
+    Z = ty_rec:tuple(Dim, dnf_var_ty_tuple:tuple(dnf_ty_product:tuple(ty_tuple:tuple([X, Split])))),
+    io:format(user,"Creating tuple with all: ~p~n", [Dim]),
+    Z.
 
 ast_to_erlang_ty({singleton, Atom}) when is_atom(Atom) ->
     TyAtom = ty_atom:finite([Atom]),
@@ -220,13 +228,15 @@ ast_to_erlang_ty({tuple, []}) -> error(todo0), ty_rec:tuple(0, dnf_var_bool:bool
 ast_to_erlang_ty({tuple, [X]}) -> error(todo1), ty_rec:tuple(1, dnf_var_ty_ref:ref(X)); % TODO
 ast_to_erlang_ty({tuple, Comps = [_, _]}) ->
     ETy = lists:map(fun(T) -> ast_to_erlang_ty(T) end, Comps),
-    T = dnf_var_ty_tuple:tuple(dnf_ty_tuple:tuple(ty_tuple:tuple(ETy))),
-    ty_rec:tuple(length(Comps), T);
+    T = dnf_var_ty_tuple:tuple(dnf_ty_product:tuple(ty_tuple:tuple(ETy))),
+    ty_rec:tuple(2, T);
 ast_to_erlang_ty({tuple, Cs}) ->
     % X is the first component
     AllComponentsAsRefs = [ast_to_erlang_ty(C) || C <- Cs],
-    Ok = splitIntoProducts(AllComponentsAsRefs),
-    ty_rec:tuple(length(Cs), dnf_var_ty_tuple:tuple(dnf_ty_tuple:tuple(ty_tuple:tuple([ty_rec:any(), Ok])))); % TODO cleaner
+        io:format(user,"All Refs ~p~n", [AllComponentsAsRefs]),
+    Ok = splitIntoProducts(AllComponentsAsRefs, length(Cs)),
+    Ok;
+    % ty_rec:tuple(length(Cs), dnf_var_ty_tuple:tuple(dnf_ty_product:tuple(ty_tuple:tuple([ty_rec:any(), Ok])))); % TODO cleaner
 
 % funs
 ast_to_erlang_ty({fun_simple}) ->

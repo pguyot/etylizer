@@ -1,7 +1,7 @@
 -module(dnf_var_ty_tuple).
 
 -define(ELEMENT, ty_variable).
--define(TERMINAL, dnf_ty_tuple).
+-define(TERMINAL, dnf_ty_product).
 -define(F(Z), fun() -> Z end).
 
 -export([normalize/4, substitute/4]).
@@ -14,7 +14,7 @@ tuple(Tuple) -> terminal(Tuple).
 var(Var) -> node(Var).
 
 is_empty(TyBDD) -> dnf(TyBDD, {fun is_empty_coclause/3, fun is_empty_union/2}).
-is_empty_coclause(_Pos, _Neg, T) -> dnf_ty_tuple:is_empty(T).
+is_empty_coclause(_Pos, _Neg, T) -> dnf_ty_product:is_empty(T).
 
 mall_variables({Default, Others}) when is_map(Others) ->
   lists:usort(lists:flatten(
@@ -29,7 +29,7 @@ normalize(Size, Ty, Fixed, M) -> dnf(Ty, {
 }).
 
 normalize_coclause(Size, PVar, NVar, Tuple, Fixed, M) ->
-  case dnf_ty_tuple:empty() of
+  case dnf_ty_product:empty() of
     Tuple -> [[]];
     _ ->
       case ty_ref:is_normalized_memoized(Tuple, Fixed, M) of
@@ -38,10 +38,10 @@ normalize_coclause(Size, PVar, NVar, Tuple, Fixed, M) ->
           error({todo, extract_test_case, memoize_tuple}); %[[]];
         miss ->
           % memoize only non-variable component t0
-          dnf_ty_tuple:normalize(Size, Tuple, PVar, NVar, Fixed, sets:union(M, sets:from_list([Tuple])))
+          dnf_ty_product:normalize(Size, Tuple, PVar, NVar, Fixed, sets:union(M, sets:from_list([Tuple])))
       end
   end.
 
 % substitution delegates to dnf_ty_tuple substitution
 apply_to_node(Node, Map, Memo) ->
-  dnf_ty_tuple:substitute(Node, Map, Memo, fun(N, Subst, M) -> ty_tuple:substitute(N, Subst, M) end).
+  dnf_ty_product:substitute(Node, Map, Memo, fun(N, Subst, M) -> ty_tuple:substitute(N, Subst, M) end).

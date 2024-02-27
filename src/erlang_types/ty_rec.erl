@@ -47,15 +47,16 @@ sanity(Ty) ->
   [2] = maps:keys(AllTuples).
 
 unwrap_tuple(RRef, Dim) ->
-
-  Unwrap = fun(_Index, {Comps, Ref}) -> 
+  io:format(user,"TO unwrap:~n~p~n", [{RRef, Dim}]),
+  Unwrap = fun(_Index, {ListOfComps, Ref}) -> 
     Ty = #ty{ tuple = {_, #{2 := T}} } = ty_ref:load(Ref),
-    sanity(Ty),
+    % sanity(Ty),
     % no variables, fixed tuple representation?
-    {terminal, {node, Tuple, {terminal, 1}, {terminal, 0}}} = T,
+    io:format(user,"Tuple unwrap:~n~p~n", [T]),
+    {terminal, [Tuple]} = T,
     A = ty_tuple:pi(1, Tuple),
     B = ty_tuple:pi(2, Tuple),
-    {Comps ++ [A], B}
+    {ListOfComps ++ [A], B}
   end,
 
   {Comps, Last} = lists:foldl(Unwrap, {[], RRef}, lists:seq(2, Dim)),
@@ -86,22 +87,24 @@ maybe_intersect(Z2, Other, Intersect) ->
 transform(TyRef, Ops) ->
   % Do things twice, pos and neg
   Pos = transform_p(TyRef, Ops),
-  Neg = transform_p(ty_rec:negate(TyRef), Ops),
+  % Neg = transform_p(ty_rec:negate(TyRef), Ops),
 
 %%  io:format(user, "Positive:~n~p~n", [Pos]),
 %%  io:format(user, "Negative:~n~p~n", [Neg]),
   % very dumb heuristic: smaller is better
-  case
-    size(term_to_binary(Pos)) > size(term_to_binary(Neg))
-  of
-    false -> {pos, Pos};
-    _ ->
-      % fix1: any is smaller than none, pick none anyway
-      case stdtypes:tnone() of
-        Pos -> {pos, Pos};
-        _ -> {neg, Neg}
-      end
-  end.
+  % case
+  %   size(term_to_binary(Pos)) > size(term_to_binary(Neg))
+  % of
+  %   false -> {pos, Pos};
+  %   _ ->
+  %     % fix1: any is smaller than none, pick none anyway
+  %     case stdtypes:tnone() of
+        % Pos -> 
+          {pos, Pos}.
+          % ;
+  %       _ -> {neg, Neg}
+  %     end
+  % end.
 
 transform_p(TyRef, Ops =
   #{
@@ -313,11 +316,13 @@ maybe_remove_redundant_negative_variables(CurrentMap, T1, T, Pv, Nv, Pv1, Nv1) -
 
 multi_transform(DefaultT, T, Ops = #{any_tuple_i := Tuple, any_tuple := Tuples, negate := Negate, union := Union, intersect := Intersect}) ->
   X1 = dnf_var_ty_tuple:transform(DefaultT, Ops),
-  Xs = lists:map(fun({Size, Tup}) ->
+  Xs = lists:map(fun
+    ({Size, Tup}) when Size /= 2 -> dnf_var_ty_tuple:transform(Tup, Ops#{tuple_dim => Size}); % its a var dnf tuple!
+    ({2, Tup}) ->
     % if a tuple is semantically equivalent to empty, return empty instead of the empty tuple
     case dnf_var_ty_tuple:is_empty(Tup) of
       true -> dnf_var_ty_tuple:transform(dnf_var_ty_tuple:empty(), Ops);
-      _ -> dnf_var_ty_tuple:transform(Tup, Ops#{tuple_dim => Size})
+      _ -> dnf_var_ty_tuple:transform(Tup, Ops)
     end
                  end, maps:to_list(T)),
   Sizes = maps:keys(T),
@@ -420,7 +425,11 @@ tuple({default, Sizes}, Tuple) ->
   NotCaptured = maps:from_list(lists:map(fun(Size) -> {Size, dnf_var_ty_tuple:empty()} end, Sizes)),
   Empty = ty_ref:load(empty()),
   ty_ref:store(Empty#ty{ tuple = {Tuple, NotCaptured}});
+tuple(2 = ComponentSize, Tuple) ->
+  Empty = ty_ref:load(empty()),
+  ty_ref:store(Empty#ty{ tuple = {dnf_var_ty_tuple:empty(), #{ComponentSize => Tuple}} });
 tuple(ComponentSize, Tuple) ->
+  {terminal, _} = Tuple, % should be var dnf tuple
   Empty = ty_ref:load(empty()),
   ty_ref:store(Empty#ty{ tuple = {dnf_var_ty_tuple:empty(), #{ComponentSize => Tuple}} }).
 
