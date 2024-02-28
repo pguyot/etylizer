@@ -175,6 +175,7 @@ simp_constr(Ctx, C) ->
                                     fun(_, {simp_constrs_error, _} = Err) -> Err;
                                        ({BodyLocs, {GuardsGammaI, GuardCsI}, {BodyGammaI, BodyCsI}, TI}, BeforeDss) ->
                                             NewGuardsCtx = inter_env(Ctx, apply_subst_to_env(Subst, GuardsGammaI)),
+
                                             simp_constrs_if_ok(simp_constrs(NewGuardsCtx, GuardCsI),
                                                 fun(GuardDss, _) ->
                                                     MatchTy = subst:apply(Subst, TI),
@@ -397,5 +398,5 @@ sanity_check({simp_constrs_ok, Dss}, Spec) ->
                     end
               end,
               Dss)
-    end.
-%sanity_check(_, _) -> ok.
+    end;
+sanity_check(_, _) -> ok. % TODO: Case not needed.
