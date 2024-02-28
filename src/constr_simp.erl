@@ -59,12 +59,6 @@ zero_simp_constrs_result() -> {simp_constrs_ok, [sets:new()]}.
 is_simp_constrs_error({simp_constrs_error, _}) -> true;
 is_simp_constrs_error(_) -> false.
 
--type simp_constrs_cont() :: fun((simp_constrs_result(), nonempty_list(constr:simp_constrs())) -> simp_constrs_result()).
-
--spec simp_constrs_if_ok(simp_constrs_result(), simp_constrs_cont()) -> simp_constrs_result().
-simp_constrs_if_ok({simp_constrs_ok, L} = C, F) -> F(C, L);
-simp_constrs_if_ok(X, _) -> X.
-
 -spec cross_union(simp_constrs_result(), simp_constrs_result()) -> simp_constrs_result().
 cross_union({simp_constrs_error, _} = Err, _) -> Err;
 cross_union(_, {simp_constrs_error, _} = Err) -> Err;
@@ -84,15 +78,15 @@ simp_constrs(Ctx, Cs) ->
             {simp_constrs_ok, _} ->
                 Dss1 = simp_constr(Ctx, C),
                 case Dss1 of 
+                    {simp_constrs_error, _} -> Dss1;
                     {simp_constrs_ok, _} ->
                         ok = case Ctx#ctx.sanity of
                             {ok, TyMap} -> sanity_check(Dss1, TyMap);
                             error -> ok
                         end,
-                        cross_union(Dss1, Dss2);
-                    {simp_constrs_error, _} -> Dss1
+                        cross_union(Dss1, Dss2)
                 end;
-            _ -> Dss2
+            _ -> Dss2 % TODO short-circuiting version of fold that stops with first error and yields error directly
         end
     end,
     sets:fold(F, zero_simp_constrs_result(), Cs).
@@ -122,23 +116,24 @@ simp_constr(Ctx, C) ->
             NewCtx = extend_env(Ctx, Env),
             simp_constrs(NewCtx, Cs);
         {ccase, Locs, CsScrut, {ExhauLeft, ExhauRight}, Bodies} ->
-            case Ctx#ctx.sanity of
+            ok = case Ctx#ctx.sanity of
                 {ok, TyMap0} ->
                     constr_gen:sanity_check(CsScrut, TyMap0);
                 error -> ok
             end,
-            simp_constrs_if_ok(
-                simp_constrs(Ctx, CsScrut),
-                fun(_, DssScrut) ->
-                    ?LOG_DEBUG("Solving constraints for scrutiny of case at ~s in order to check " ++
-                               "which branches should be ignored.~n" ++
-                               "Env: ~s~nConstraints for scrutiny:~n~s~n" ++
-                               "exhaustivness check: ~s <= ~s",
-                               ast:format_loc(loc(Locs)),
-                               pretty:render_poly_env(Ctx#ctx.env),
-                               pretty:render_constr(DssScrut),
-                               pretty:render_ty(ExhauLeft),
-                               pretty:render_ty(ExhauRight)),
+            Result = simp_constrs(Ctx, CsScrut),
+            case Result of
+                {simp_constrs_error, _} -> Result;
+                {simp_constrs_ok, DssScrut} ->
+                    ?LOG_DEBUG( "Solving constraints for scrutiny of case at ~s in order to check " ++
+                                "which branches should be ignored.~n" ++
+                                "Env: ~s~nConstraints for scrutiny:~n~s~n" ++
+                                "exhaustivness check: ~s <= ~s",
+                                ast:format_loc(loc(Locs)),
+                                pretty:render_poly_env(Ctx#ctx.env),
+                                pretty:render_constr(DssScrut),
+                                pretty:render_ty(ExhauLeft),
+                                pretty:render_ty(ExhauRight)),
                     Exhau = sets:from_list([{csubty, Locs, ExhauLeft, ExhauRight}]),
                     {Substs, Delta} =
                         utils:timing(
@@ -175,9 +170,10 @@ simp_constr(Ctx, C) ->
                                     fun(_, {simp_constrs_error, _} = Err) -> Err;
                                        ({BodyLocs, {GuardsGammaI, GuardCsI}, {BodyGammaI, BodyCsI}, TI}, BeforeDss) ->
                                             NewGuardsCtx = inter_env(Ctx, apply_subst_to_env(Subst, GuardsGammaI)),
-
-                                            simp_constrs_if_ok(simp_constrs(NewGuardsCtx, GuardCsI),
-                                                fun(GuardDss, _) ->
+                                            GuardDss = simp_constrs(NewGuardsCtx, GuardCsI),
+                                            case GuardDss of
+                                                {simp_constrs_error, _} -> GuardDss;
+                                                {simp_constrs_ok, _} ->
                                                     MatchTy = subst:apply(Subst, TI),
                                                     IsBottom = subty:is_subty(Ctx#ctx.symtab,
                                                                                 MatchTy,
@@ -206,7 +202,7 @@ simp_constr(Ctx, C) ->
                                                             BodyDss = simp_constrs(NewBodyCtx, BodyCsI),
                                                             cross_union(cross_union(BeforeDss, GuardDss), BodyDss)
                                                     end
-                                                end)
+                                                end
                                     end,
                                     {simp_constrs_ok, [EquivDs]}, Bodies
                                 )
@@ -214,13 +210,13 @@ simp_constr(Ctx, C) ->
                         Substs
                     ),
                     ?LOG_TRACE("MultiResults: ~w", MultiResults),
-                    case lists:filtermap(
+                    NoErrorMultiResults = lists:filtermap(
                         fun({simp_constrs_ok, X}) -> {true, X};
                             (_) -> false
                         end,
                         MultiResults
-                        )
-                    of
+                        ),
+                    case NoErrorMultiResults of
                         % We have no successful results: either we only have errors or
                         % no results at all
                         [] ->
@@ -251,8 +247,8 @@ simp_constr(Ctx, C) ->
                             % LL has type nonempty_list(nonempty_list(constr:simp_constrs())).
                             % It contains the successful results.
                             {simp_constrs_ok, lists:flatten(LL)}
-                    end
-                end);
+            end
+        end;
         {cunsatisfiable, Locs, Msg} -> [single({cunsatisfiable, Locs, Msg})];
         X -> errors:uncovered_case(?FILE, ?LINE, X)
     end.
