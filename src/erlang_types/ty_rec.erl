@@ -47,21 +47,33 @@ sanity(Ty) ->
   [2] = maps:keys(AllTuples).
 
 unwrap_tuple(RRef, Dim) ->
-  io:format(user,"TO unwrap:~n~p~n", [{RRef, Dim}]),
-  Unwrap = fun(_Index, {ListOfComps, Ref}) -> 
-    Ty = #ty{ tuple = {_, #{2 := T}} } = ty_ref:load(Ref),
-    % sanity(Ty),
-    % no variables, fixed tuple representation?
-    io:format(user,"Tuple unwrap:~n~p~n", [T]),
-    {terminal, [Tuple]} = T,
-    A = ty_tuple:pi(1, Tuple),
-    B = ty_tuple:pi(2, Tuple),
-    {ListOfComps ++ [A], B}
+  Unwrap = fun(_Index, AllTuples ) -> 
+    Multi = lists:map(fun({Components, Ref}) -> 
+      case ty_ref:load(Ref) of
+        #ty{ tuple = {_, #{2 := T}} } ->
+          {terminal, Tuples} = T,
+
+          AllR = lists:map(fun(Tup) -> 
+            A = ty_tuple:pi(1, Tup),
+            B = ty_tuple:pi(2, Tup),
+            {Components ++ [A], B}
+          end, Tuples),
+
+          AllR;
+        % special case s
+        % Any -> (Any, Any) unfold
+        % TODO Empty -> (Empty, Empty) unfold possible?
+        #ty{ tuple = {{terminal, top_2tuple}, _} } ->
+          A = ty_rec:any(),
+          B = ty_rec:any(),
+          [{Components ++ [A], B}]
+      end
+    end, AllTuples),
+    lists:flatten(Multi)
   end,
 
-  {Comps, Last} = lists:foldl(Unwrap, {[], RRef}, lists:seq(2, Dim)),
-
-  Comps ++ [Last].
+  All = lists:foldl(Unwrap, [{[], RRef}], lists:seq(2, Dim)),
+  lists:map(fun({Comps, Last}) -> Comps ++ [Last] end, All).
 
 % ======
 % top-level API
@@ -87,24 +99,23 @@ maybe_intersect(Z2, Other, Intersect) ->
 transform(TyRef, Ops) ->
   % Do things twice, pos and neg
   Pos = transform_p(TyRef, Ops),
-  % Neg = transform_p(ty_rec:negate(TyRef), Ops),
+  Neg = transform_p(ty_rec:negate(TyRef), Ops),
 
 %%  io:format(user, "Positive:~n~p~n", [Pos]),
 %%  io:format(user, "Negative:~n~p~n", [Neg]),
-  % very dumb heuristic: smaller is better
-  % case
-  %   size(term_to_binary(Pos)) > size(term_to_binary(Neg))
-  % of
-  %   false -> {pos, Pos};
-  %   _ ->
-  %     % fix1: any is smaller than none, pick none anyway
-  %     case stdtypes:tnone() of
-        % Pos -> 
-          {pos, Pos}.
-          % ;
-  %       _ -> {neg, Neg}
-  %     end
-  % end.
+%%  very dumb heuristic: smaller is better
+  case
+    size(term_to_binary(Pos)) > size(term_to_binary(Neg))
+  of
+    false -> {pos, Pos};
+    _ ->
+      % fix1: any is smaller than none, pick none anyway
+      case stdtypes:tnone() of
+        Pos -> 
+          {pos, Pos};
+        _ -> {neg, Neg}
+      end
+  end.
 
 transform_p(TyRef, Ops =
   #{
