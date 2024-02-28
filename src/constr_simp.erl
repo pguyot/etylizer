@@ -79,19 +79,23 @@ cross_union({simp_constrs_ok, L1}, {simp_constrs_ok, L2}) ->
 -spec simp_constrs(ctx(), constr:constrs()) -> simp_constrs_result().
 simp_constrs(Ctx, Cs) ->
     ?LOG_TRACE("simp_constrs, Cs=~w", Cs),
-    sets:fold(
-      fun(C, Dss2) ->
-        simp_constrs_if_ok(Dss2,
-            fun(_, _) ->
+    F = fun(C, Dss2) ->
+        case Dss2 of
+            {simp_constrs_ok, _} ->
                 Dss1 = simp_constr(Ctx, C),
-                case Ctx#ctx.sanity of
-                    {ok, TyMap} -> sanity_check(Dss1, TyMap);
-                    error -> ok
-                end,
-                cross_union(Dss1, Dss2)
-            end)
-      end,
-      zero_simp_constrs_result(), Cs).
+                case Dss1 of 
+                    {simp_constrs_ok, _} ->
+                        ok = case Ctx#ctx.sanity of
+                            {ok, TyMap} -> sanity_check(Dss1, TyMap);
+                            error -> ok
+                        end,
+                        cross_union(Dss1, Dss2);
+                    {simp_constrs_error, _} -> Dss1
+                end;
+            _ -> Dss2
+        end
+    end,
+    sets:fold(F, zero_simp_constrs_result(), Cs).
 
 -spec simp_constr(ctx(), constr:constr()) -> simp_constrs_result().
 simp_constr(Ctx, C) ->
@@ -197,9 +201,7 @@ simp_constr(Ctx, C) ->
                                                                             );
                                                                 _ -> ok
                                                             end,
-                                                            NewBodyCtx =
-                                                                inter_env(Ctx,
-                                                                        apply_subst_to_env(Subst, BodyGammaI)),
+                                                            NewBodyCtx = inter_env(Ctx,apply_subst_to_env(Subst, BodyGammaI)),
                                                             BodyDss = simp_constrs(NewBodyCtx, BodyCsI),
                                                             cross_union(cross_union(BeforeDss, GuardDss), BodyDss)
                                                     end
@@ -370,6 +372,7 @@ inter_env(Ctx, Env) ->
 apply_subst_to_env(Subst, Env) ->
     maps:map(fun(_Key, T) -> subst:apply(Subst, T) end, Env).
 
+% TODO Wrap out Dss!
 -spec sanity_check(any(), ast_check:ty_map()) -> ok.
 sanity_check({simp_constrs_ok, Dss}, Spec) ->
     if
@@ -394,5 +397,5 @@ sanity_check({simp_constrs_ok, Dss}, Spec) ->
                     end
               end,
               Dss)
-    end;
-sanity_check(_, _) -> ok.
+    end.
+%sanity_check(_, _) -> ok.
