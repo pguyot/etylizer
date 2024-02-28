@@ -234,7 +234,9 @@ tuple2_union_test() ->
     ttuple([(tatom()), (tatom(c))])
   ]),
   B = ast_lib:ast_to_erlang_ty(A),
+  io:format(user,"Ertlang ty to ast: ~p~n", [B]),
   Pretty = ast_lib:erlang_ty_to_ast(B),
+  io:format(user,"Pretty: ~p~n", [Pretty]),
   true = subty:is_equivalent(none, A, Pretty),
   ?assertEqual("{atom(), c}", pretty:render_ty(Pretty)),
 
@@ -350,5 +352,17 @@ tuple1_covariance_test() ->
   Pretty = ast_lib:erlang_ty_to_ast(B),
   true = subty:is_equivalent(none, A, Pretty),
   ?assertEqual("{a | e}", pretty:render_ty(Pretty)),
+
+  ok.
+
+tuple1_1_test() ->
+  ecache:reset_all(),
+  A = tunion([
+    ttuple([tatom(a)])
+  ]),
+  B = ast_lib:ast_to_erlang_ty(A),
+  Pretty = ast_lib:erlang_ty_to_ast(B),
+  true = subty:is_equivalent(none, A, Pretty),
+  ?assertEqual("{a}", pretty:render_ty(Pretty)),
 
   ok.

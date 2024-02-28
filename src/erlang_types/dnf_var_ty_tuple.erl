@@ -16,8 +16,10 @@ var(Var) -> node(Var).
 is_empty(TyBDD) -> dnf(TyBDD, {fun is_empty_coclause/3, fun is_empty_union/2}).
 is_empty_coclause(_Pos, _Neg, T) -> dnf_ty_product:is_empty(T).
 
-mall_variables({Default, Others}) when is_map(Others) ->
+mall_variables({Default, T0, T1, Others}) when is_map(Others) ->
   lists:usort(lists:flatten(
+    dnf_var_ty_bool:all_variables(T0) ++
+    dnf_var_ty_ref:all_variables(T1) ++
     all_variables(Default) ++
     lists:map(fun({_K,V}) -> all_variables(V) end, maps:to_list(Others))
   ));

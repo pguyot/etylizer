@@ -108,14 +108,21 @@ erlang_ty_var_to_var({var, Id, Name}) ->
     end.
 
 erlang_ty_to_ast(X) ->
-    {Pol, Full} = ty_rec:transform(
+    ty_rec:transform(
         X,
         #{
             to_fun => fun(S, T) -> stdtypes:tfun_full(lists:map(fun(F) ->
                 (erlang_ty_to_ast(F)) end,S),
                 (erlang_ty_to_ast(T))
             ) end,
-            to_tuple => fun(Ts) -> stdtypes:ttuple(lists:map(fun(T) -> (erlang_ty_to_ast(T)) end,Ts)) end,
+            to_tuple => fun(Ts) -> 
+                Components = lists:map(fun(T) -> (erlang_ty_to_ast(T)) end,Ts),
+                case lists:any(fun({predef, none}) -> true ;(_) -> false end, Components) of
+                    true -> stdtypes:tnone();
+                    _ ->
+                        stdtypes:ttuple(Components) 
+                end
+            end,
             to_atom => fun(A) -> stdtypes:tatom(A) end,
             to_list => fun(A, B) -> stdtypes:tlist_improper((erlang_ty_to_ast(A)), (erlang_ty_to_ast(B))) end,
             to_int => fun(S, T) -> stdtypes:trange(S, T) end,
@@ -135,11 +142,7 @@ erlang_ty_to_ast(X) ->
             union => fun ast_lib:mk_union/1,
             intersect => fun ast_lib:mk_intersection/1,
             negate => fun ast_lib:mk_negation/1
-        }),
-    case Pol of
-        pos -> Full;
-        neg -> stdtypes:tnegate(Full)
-    end.
+        }).
 
 simplify(Full) ->
 %%    io:format(user, ">> Full~n~p~n", [Full]),
@@ -224,8 +227,12 @@ ast_to_erlang_ty({binary, _, _}) ->
 
 ast_to_erlang_ty({tuple_any}) ->
     ty_rec:tuple();
-ast_to_erlang_ty({tuple, []}) -> error(todo0), ty_rec:tuple(0, dnf_var_bool:bool(bdd_bool:any())); % TODO
-ast_to_erlang_ty({tuple, [X]}) -> error(todo1), ty_rec:tuple(1, dnf_var_ty_ref:ref(X)); % TODO
+ast_to_erlang_ty({tuple, []}) -> 
+    T = dnf_var_ty_bool:any(),
+    ty_rec:tuple(0, T);
+ast_to_erlang_ty({tuple, [X]}) -> 
+    T = dnf_var_ty_ref:ref(ast_to_erlang_ty(X)),
+    ty_rec:tuple(1, T);
 ast_to_erlang_ty({tuple, Comps = [_, _]}) ->
     ETy = lists:map(fun(T) -> ast_to_erlang_ty(T) end, Comps),
     T = dnf_var_ty_tuple:tuple(dnf_ty_product:tuple(ty_tuple:tuple(ETy))),

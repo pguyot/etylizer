@@ -198,6 +198,9 @@ all_variables(Ty) ->
   }).
 
 
+% dnf_var_ty_ref uses a special transform 
+% TODO document why, transform does not return ty_rec() but either {pos, ty_rec} or {neg, ty_rec}
+-ifndef(TRANSFORM).
 transform(Ty, Ops = #{negate := Negate, intersect := Intersect, union := Union}) ->
   dnf(Ty, {
     fun
@@ -209,3 +212,4 @@ transform(Ty, Ops = #{negate := Negate, intersect := Intersect, union := Union})
     end,
     fun(F1, F2) -> Union([F1(), F2()]) end
   }).
+-endif.
