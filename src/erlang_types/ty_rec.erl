@@ -345,6 +345,28 @@ multi_transform(DefaultT, T0, T1, Tn, Ops = #{any_tuple_i := Tuple, any_tuple :=
   Sizes = maps:keys(Tn),
 
   DefaultTuplesWithoutExplicitTuples = Intersect([Xd, Tuples(), Negate(Union([Tuple(0), Tuple(1)] ++ [Tuple(I) || I <- Sizes]))]),
+    % CONTINUE HERE
+    % {ty,{terminal,[]},
+%     {terminal,{{0,nil},finite}},
+%     {terminal,[]},
+%     {terminal,{terminal,0}},
+%     {{terminal,[]},
+%      {terminal,0},
+%      {terminal,{ty_ref,1}},
+%      #{2 =>
+%            {node,{var,2,'$3'},
+%                  {node,{var,3,'$4'},
+%                        {node,{var,4,'$7'},
+%                              {node,{var,5,'$8'},
+%                                    {terminal,top_2tuple},
+%                                    {terminal,[]}},
+%                              {terminal,[]}},
+%                        {terminal,[]}},
+%                  {terminal,[]}}}},
+%     {{terminal,{terminal,0}},#{}}}
+% {intersection,[{var,'$8'},{var,'$7'},{var,'$4'},{var,'$3'},{tuple_any}]}
+  io:format(user, "Default Without: ~p~n", [DefaultTuplesWithoutExplicitTuples]),
+  io:format(user, "Rest: ~p~n", [DefaultTuplesWithoutExplicitTuples]),
   Union([DefaultTuplesWithoutExplicitTuples, Union([X0, X1] ++ Xs)]).
 
 multi_transform_fun(DefaultF, F, Ops = #{any_function_i := Function, any_function := Functions, negate := Negate, union := Union, intersect := Intersect}) ->
