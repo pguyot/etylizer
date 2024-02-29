@@ -405,3 +405,24 @@ tuple1_intersect2_test() ->
   ?assertEqual("{b}", pretty:render_ty(Pretty)),
 
   ok.
+
+tuple_pretty_test() ->
+  ecache:reset_all(),
+  V0 = tunion([
+    ttuple([tintersect([tatom(b), tvar(a5)]), tatom(int)]), 
+    ttuple([tatom(a), tatom(int)]),
+    tintersect([
+      tunion([
+        ttuple([tintersect([tatom(b), tvar(a5)]), tatom(int)]),
+        ttuple([tatom(a), tatom(int)])
+      ]),
+      tvar(a0a0)
+    ])
+  ]),
+  A = tintersect([V0, ttuple([tatom(a), tatom(int)])]),
+  B = ast_lib:ast_to_erlang_ty(A),
+  Pretty = ast_lib:erlang_ty_to_ast(B),
+  true = subty:is_equivalent(none, A, Pretty),
+  ?assertEqual("{a, int}", pretty:render_ty(Pretty)),
+
+  ok.

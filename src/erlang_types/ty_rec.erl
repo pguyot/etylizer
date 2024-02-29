@@ -101,12 +101,10 @@ transform(TyRef, Ops) ->
 
 stransform(TyRef, Ops) ->
   % Do things twice, pos and neg
-
   Pos = transform_p(TyRef, Ops),
-  io:format(user,"====~nTransform: ~p~nGot: ~p~n",[TyRef, Pos]),
   Neg = transform_p(ty_rec:negate(TyRef), Ops),
 
-%%  very dumb heuristic: smaller is better
+  % very dumb heuristic: smaller is better
   case
     size(term_to_binary(Pos)) > size(term_to_binary(Neg))
   of
@@ -114,8 +112,7 @@ stransform(TyRef, Ops) ->
     _ ->
       % fix1: any is smaller than none, pick none anyway
       case stdtypes:tnone() of
-        Pos -> 
-          {pos, Pos};
+        Pos -> {pos, Pos};
         _ -> {neg, Neg}
       end
   end.
@@ -135,7 +132,7 @@ transform_p(TyRef, Ops =
     negate := Negate,
     var := Var
   }) ->
-  io:format(user,"<~p> Transforming: ~p~n~p~n", [Ref = make_ref(), TyRef, ty_ref:load(TyRef)]),
+  % io:format(user,"<~p> Transforming: ~p~n~p~n", [Ref = make_ref(), TyRef, ty_ref:load(TyRef)]),
   DnfMap = prepare(TyRef),
 %%  io:format(user, "<~p> Prepared: ~n~p~n", [Ref, DnfMap]),
 
@@ -162,7 +159,6 @@ transform_p(TyRef, Ops =
            end, DnfMap),
 
   Ety = Union(maps:values(Mapped)),
-  io:format(user,"<~p> Result: ~p~n", [Ref, Ety]),
   Sanity = ast_lib:ast_to_erlang_ty(Ety),
 %%  io:format(user,"<~p> Sanity: ~p~n", [Ref, Sanity]),
   % leave this sanity check for a while
@@ -578,7 +574,6 @@ is_empty_miss(TyRef) ->
   ).
 
 multi_empty_tuples({Default, T0, T1, AllTuples}) ->
-  io:format(user,"check: ~p~n", [T0]),
   dnf_var_ty_tuple:is_empty(Default)
     andalso dnf_var_ty_bool:is_empty(T0)
     andalso dnf_var_ty_ref:is_empty(T1)

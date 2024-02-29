@@ -7,7 +7,7 @@
 -export([simplify/1, reset/0, ast_to_erlang_ty/1, erlang_ty_to_ast/1, ast_to_erlang_ty_var/1, erlang_ty_var_to_var/1]).
 -define(VAR_ETS, ast_norm_var_memo). % remember variable name -> variable ID to convert variables properly
 
--export([mk_intersection/1, mk_union/1, mk_negation/1, mk_diff/2]).
+-export([splitIntoProducts/2, mk_intersection/1, mk_union/1, mk_negation/1, mk_diff/2]).
 
 reset() ->
     catch ets:delete(?VAR_ETS),
@@ -208,11 +208,7 @@ splitIntoProducts([X | Xs], 0) ->
     ty_rec:tuple(2, dnf_var_ty_tuple:tuple(dnf_ty_product:tuple(ty_tuple:tuple([X, Split]))));
 splitIntoProducts([X | Xs], Dim) when Dim /= 2 ->
     Split = splitIntoProducts(Xs, 0),
-    io:format(user,"Got lower split: ~p~n", [Split]),
-    io:format(user,"Creating tuple with all: ~p~n", [Dim]),
-    Z = ty_rec:tuple(Dim, dnf_var_ty_tuple:tuple(dnf_ty_product:tuple(ty_tuple:tuple([X, Split])))),
-    io:format(user,"Creating tuple with all: ~p~n", [Dim]),
-    Z.
+    ty_rec:tuple(Dim, dnf_var_ty_tuple:tuple(dnf_ty_product:tuple(ty_tuple:tuple([X, Split])))).
 
 ast_to_erlang_ty({singleton, Atom}) when is_atom(Atom) ->
     TyAtom = ty_atom:finite([Atom]),
@@ -239,12 +235,8 @@ ast_to_erlang_ty({tuple, Comps = [_, _]}) ->
     T = dnf_var_ty_tuple:tuple(dnf_ty_product:tuple(ty_tuple:tuple(ETy))),
     ty_rec:tuple(2, T);
 ast_to_erlang_ty({tuple, Cs}) ->
-    % X is the first component
     AllComponentsAsRefs = [ast_to_erlang_ty(C) || C <- Cs],
-        io:format(user,"All Refs ~p~n", [AllComponentsAsRefs]),
-    Ok = splitIntoProducts(AllComponentsAsRefs, length(Cs)),
-    Ok;
-    % ty_rec:tuple(length(Cs), dnf_var_ty_tuple:tuple(dnf_ty_product:tuple(ty_tuple:tuple([ty_rec:any(), Ok])))); % TODO cleaner
+    splitIntoProducts(AllComponentsAsRefs, length(Cs));
 
 % funs
 ast_to_erlang_ty({fun_simple}) ->
