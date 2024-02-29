@@ -357,14 +357,32 @@ tuple1_covariance_test() ->
 
 tuple1_1_test() ->
   ecache:reset_all(),
-  A = 
-    ttuple([tatom(a)])
-  ,
+  A = ttuple([tatom(a)]) ,
   B = ast_lib:ast_to_erlang_ty(A),
   io:format(user, "Before: ~p~n", [B]),
   Pretty = ast_lib:erlang_ty_to_ast(B),
   io:format(user, "Pretty: ~p~n", [Pretty]),
   true = subty:is_equivalent(none, A, Pretty),
   ?assertEqual("{a}", pretty:render_ty(Pretty)),
+
+  ok.
+
+tuple1_1_neg_test() ->
+  ecache:reset_all(),
+  A = tnegate(ttuple([tatom(a)])),
+  B = ast_lib:ast_to_erlang_ty(A),
+  Pretty = ast_lib:erlang_ty_to_ast(B),
+  true = subty:is_equivalent(none, A, Pretty),
+  ?assertEqual("not({a})", pretty:render_ty(Pretty)),
+
+  ok.
+
+atom_neg_test() ->
+  ecache:reset_all(),
+  A = tnegate(tatom(a)),
+  B = ast_lib:ast_to_erlang_ty(A),
+  Pretty = ast_lib:erlang_ty_to_ast(B),
+  true = subty:is_equivalent(none, A, Pretty),
+  ?assertEqual("not(a)", pretty:render_ty(Pretty)),
 
   ok.

@@ -103,6 +103,7 @@ stransform(TyRef, Ops) ->
   % Do things twice, pos and neg
 
   Pos = transform_p(TyRef, Ops),
+  io:format(user,"====~nTransform: ~p~nGot: ~p~n",[TyRef, Pos]),
   Neg = transform_p(ty_rec:negate(TyRef), Ops),
 
 %%  very dumb heuristic: smaller is better
@@ -134,7 +135,7 @@ transform_p(TyRef, Ops =
     negate := Negate,
     var := Var
   }) ->
-%%  io:format(user,"<~p> Transforming: ~p~n~p~n", [Ref = make_ref(), TyRef, ty_ref:load(TyRef)]),
+  io:format(user,"<~p> Transforming: ~p~n~p~n", [Ref = make_ref(), TyRef, ty_ref:load(TyRef)]),
   DnfMap = prepare(TyRef),
 %%  io:format(user, "<~p> Prepared: ~n~p~n", [Ref, DnfMap]),
 
@@ -161,7 +162,7 @@ transform_p(TyRef, Ops =
            end, DnfMap),
 
   Ety = Union(maps:values(Mapped)),
-%%  io:format(user,"<~p> Result: ~p~n", [Ref, Ety]),
+  io:format(user,"<~p> Result: ~p~n", [Ref, Ety]),
   Sanity = ast_lib:ast_to_erlang_ty(Ety),
 %%  io:format(user,"<~p> Sanity: ~p~n", [Ref, Sanity]),
   % leave this sanity check for a while
@@ -336,8 +337,6 @@ multi_transform(DefaultT, T0, T1, Tn, Ops = #{any_tuple_i := Tuple, any_tuple :=
   Xd = dnf_var_ty_tuple:transform(DefaultT, Ops),
   X0 = dnf_var_ty_bool:transform(T0, Ops#{any => fun() -> Tuple(0) end }),
   X1 = dnf_var_ty_ref:transform(T1, Ops#{any => fun() -> Tuple(1) end }),
-  io:format(user,"Transforming bool: ~p -> ~p~n", [T0, X0]),
-  io:format(user,"Transforming ref: ~p -> ~p~n", [T1, X1]),
   Xs = lists:map(fun
     ({Size, Tup}) when Size > 2 -> dnf_var_ty_tuple:transform(Tup, Ops#{tuple_dim => Size}); % its a var dnf tuple!
     ({2, Tup}) ->
@@ -349,10 +348,7 @@ multi_transform(DefaultT, T0, T1, Tn, Ops = #{any_tuple_i := Tuple, any_tuple :=
                  end, maps:to_list(Tn)),
   Sizes = maps:keys(Tn),
 
-  DefaultTuplesWithoutExplicitTuples = Intersect([Xd, Tuples(), Negate(Union([Tuple(I) || I <- Sizes]))]),
-    io:format(user,"Default: ~p~n", [DefaultTuplesWithoutExplicitTuples]),
-    io:format(user,"Xs: ~p~n", [Xs]),
-    io:format(user,"X0 and X1: ~p~n", [{X0, X1}]),
+  DefaultTuplesWithoutExplicitTuples = Intersect([Xd, Tuples(), Negate(Union([Tuple(0), Tuple(1)] ++ [Tuple(I) || I <- Sizes]))]),
   Union([DefaultTuplesWithoutExplicitTuples, Union([X0, X1] ++ Xs)]).
 
 multi_transform_fun(DefaultF, F, Ops = #{any_function_i := Function, any_function := Functions, negate := Negate, union := Union, intersect := Intersect}) ->
