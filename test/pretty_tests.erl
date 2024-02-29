@@ -8,8 +8,6 @@
 % the heuristic in gen_bdd:do_dnf already handles these cases, but it's only a heuristic
 % S1: distribution over multiple coclauses
 % not(mu5) /\ bool | not(mu6) /\ bool | mu6 /\ mu5 => bool | mu5 /\ mu6
-% S2: redundant negations on the monomorphic DNF level
-% {a5 /\ b, int} | {a, int} /\ not({a5 /\ b, int}) => {a5 /\ b, int} | {a, int}
 
 empty_tuple_test() ->
   ecache:reset_all(),
@@ -347,9 +345,7 @@ tuple1_1_test() ->
   ecache:reset_all(),
   A = ttuple([tatom(a)]) ,
   B = ast_lib:ast_to_erlang_ty(A),
-  io:format(user, "Before: ~p~n", [B]),
   Pretty = ast_lib:erlang_ty_to_ast(B),
-  io:format(user, "Pretty: ~p~n", [Pretty]),
   true = subty:is_equivalent(none, A, Pretty),
   ?assertEqual("{a}", pretty:render_ty(Pretty)),
 
