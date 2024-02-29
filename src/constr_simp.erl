@@ -161,7 +161,7 @@ simp_constr(Ctx, C) ->
                                 % returns simp_constrs_result(): if there is at least one
                                 % branch that fails then the whole cases fails for the given
                                 % substitution
-                                Result1 = lists:foldl(
+                                CaseResult = lists:foldl(
                                     % returns simp_constrs_result()
                                     fun(_, {simp_constrs_error, _} = Err) -> Err;
                                        ({BodyLocs, {GuardsGammaI, GuardCsI}, {BodyGammaI, BodyCsI}, TI}, BeforeDss) ->
@@ -202,9 +202,9 @@ simp_constr(Ctx, C) ->
                                     end,
                                     {simp_constrs_ok, [EquivDs]}, Bodies
                                 ),
-                                case Result1 of
+                                case CaseResult of
                                     {simp_constrs_ok, X} -> {[X | Success], Fails}; %need to remove the simp_constrs_ok label for the flattening later
-                                    {simp_constrs_error, _} ->  {Success, [Result1 | Fails]}
+                                    {simp_constrs_error, _} ->  {Success, [CaseResult | Fails]}
                                 end
                         end,
                         {[], []},
