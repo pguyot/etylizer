@@ -336,8 +336,8 @@ multi_transform(DefaultT, T0, T1, Tn, Ops = #{any_tuple_i := Tuple, any_tuple :=
   Xd = dnf_var_ty_tuple:transform(DefaultT, Ops),
   X0 = dnf_var_ty_bool:transform(T0, Ops#{any => fun() -> Tuple(0) end }),
   X1 = dnf_var_ty_ref:transform(T1, Ops#{any => fun() -> Tuple(1) end }),
-  io:format(user,"~p~n", [X0]),
-  io:format(user,"~p~n", [X1]),
+  io:format(user,"Transforming bool: ~p -> ~p~n", [T0, X0]),
+  io:format(user,"Transforming ref: ~p -> ~p~n", [T1, X1]),
   Xs = lists:map(fun
     ({Size, Tup}) when Size > 2 -> dnf_var_ty_tuple:transform(Tup, Ops#{tuple_dim => Size}); % its a var dnf tuple!
     ({2, Tup}) ->

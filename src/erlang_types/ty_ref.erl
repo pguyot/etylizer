@@ -40,7 +40,7 @@ reset() ->
 setup_all() ->
   % spawns a new process that is the owner of the variable id ETS table
   lists:foreach(fun(Tab) -> ets:new(Tab, [public, named_table]) end, all_tables()),
-  ets:insert(?TY_UTIL, {ty_number, 0}),
+  ets:insert(?TY_UTIL, {ty_number, 1}), % skip 0 and 1, any empty IDs
 
   % define ANY EMPTY node once
   ok = define_any(),
@@ -130,7 +130,7 @@ define_ty_ref({ty_ref, Id}, Ty) ->
       ok
   end,
 
-%%  io:format(user, "Store (manual): ~p :=~n~p~n", [Id, Ty]),
+  % io:format(user, "Store (manual): ~p :=~n~p~n", [Id, Ty]),
   ets:insert(?TY_UNIQUE_TABLE, {Ty, Id}),
   ets:insert(?TY_MEMORY, {Id, Ty}),
   {ty_ref, Id}.

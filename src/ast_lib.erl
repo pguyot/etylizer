@@ -231,7 +231,8 @@ ast_to_erlang_ty({tuple, []}) ->
     T = dnf_var_ty_bool:any(),
     ty_rec:tuple(0, T);
 ast_to_erlang_ty({tuple, [X]}) -> 
-    T = dnf_var_ty_ref:ref(ast_to_erlang_ty(X)),
+    Inner = ast_to_erlang_ty(X),
+    T = dnf_var_ty_ref:ref(Inner),
     ty_rec:tuple(1, T);
 ast_to_erlang_ty({tuple, Comps = [_, _]}) ->
     ETy = lists:map(fun(T) -> ast_to_erlang_ty(T) end, Comps),
