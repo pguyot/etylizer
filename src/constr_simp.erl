@@ -210,43 +210,38 @@ simp_constr(Ctx, C) ->
                         Substs
                     ),
                     ?LOG_TRACE("MultiResults: ~w", MultiResults),
-                    NoErrorMultiResults = lists:filtermap(
-                        fun({simp_constrs_ok, X}) -> {true, X};
-                            (_) -> false
-                        end,
-                        MultiResults
-                        ),
-                    case NoErrorMultiResults of
-                        % We have no successful results: either we only have errors or
-                        % no results at all
+
+                    case MultiResults of 
                         [] ->
-                            case lists:search(fun is_simp_constrs_error/1, MultiResults) of
+                            % MultiResults is empty, there is no substitution,
+                            % so the tally invocation for typing the scrutiny above failed.
+                            % Hence, we return an error
+                            ?LOG_DEBUG("MultiResults is empty, checking whether typing the scrutiny or the exhaustiveness check fails."),
+                            case lists:flatmap(
+                                    fun(Ds) -> get_substs(tally:tally(Ctx#ctx.symtab, Ds), Locs) end,
+                                    DssScrut)
+                            of
+                                [] ->
+                                    ?LOG_DEBUG("Typing the scrutiny failed"),
+                                    LocScrut = loc(locs_from_constrs(CsScrut), loc(Locs)),
+                                    {simp_constrs_error, {tyerror, LocScrut}};
+                                _ ->
+                                    ?LOG_DEBUG("Typing the scrutiny succeed, so it's a non-exhaustive case"),
+                                    {simp_constrs_error, {non_exhaustive_case, loc(Locs)}}
+                            end;
+                        _ -> case lists:search(fun is_simp_constrs_error/1, MultiResults) of
                                 false ->
-                                    % MultiResults is empty, there is no substitution,
-                                    % so the tally invocation for typing the scrutiny above failed.
-                                    % Hence, we return an error
-                                    ?LOG_DEBUG("MultiResults is empty, checking whether typing the scrutiny or the exhaustiveness check fails."),
-                                    case
-                                        lists:flatmap(
-                                            fun(Ds) -> get_substs(tally:tally(Ctx#ctx.symtab, Ds), Locs) end,
-                                        DssScrut)
-                                    of
-                                        [] ->
-                                            ?LOG_DEBUG("Typing the scrutiny failed"),
-                                            LocScrut = loc(locs_from_constrs(CsScrut), loc(Locs)),
-                                            {simp_constrs_error, {tyerror, LocScrut}};
-                                        _ ->
-                                            ?LOG_DEBUG("Typing the scrutiny succeed, so it's a non-exhaustive case"),
-                                            {simp_constrs_error, {non_exhaustive_case, loc(Locs)}}
-                                    end;
+                                    LL = lists:filtermap(
+                                        fun({simp_constrs_ok, X}) -> {true, X};
+                                            (_) -> false
+                                        end,
+                                         MultiResults),
+                                    {simp_constrs_ok, lists:flatten(LL)};
                                 {value, Err} ->
                                     % there are nested errors, return the first
+                                    % TODO Should we return really an arbitrary error?
                                     Err
-                            end;
-                        LL ->
-                            % LL has type nonempty_list(nonempty_list(constr:simp_constrs())).
-                            % It contains the successful results.
-                            {simp_constrs_ok, lists:flatten(LL)}
+                    end
             end
         end;
         {cunsatisfiable, Locs, Msg} -> [single({cunsatisfiable, Locs, Msg})];
