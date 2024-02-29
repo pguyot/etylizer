@@ -55,10 +55,6 @@ zero_simp_constrs_result() -> {simp_constrs_ok, [sets:new()]}.
 
 -type simp_constrs_error_kind() :: tyerror | redundant_branch | non_exhaustive_case.
 
--spec is_simp_constrs_error(simp_constrs_result()) -> boolean().
-is_simp_constrs_error({simp_constrs_error, _}) -> true;
-is_simp_constrs_error(_) -> false.
-
 -spec cross_union(simp_constrs_result(), simp_constrs_result()) -> simp_constrs_result().
 cross_union({simp_constrs_error, _} = Err, _) -> Err;
 cross_union(_, {simp_constrs_error, _} = Err) -> Err;
@@ -160,12 +156,12 @@ simp_constr(Ctx, C) ->
                     % Non-determinism here because of multiple solutions from tally
                     % MultiResults has type [simp_constrs_result()]
                     % It contains a simp_constrs_result() for each substitution returned from tally.
-                    MultiResults = lists:map(
-                        fun({Subst, EquivDs}) ->
+                    MultiResults = lists:foldl(
+                        fun({Subst, EquivDs}, {Success, Fails}) ->
                                 % returns simp_constrs_result(): if there is at least one
                                 % branch that fails then the whole cases fails for the given
                                 % substitution
-                                lists:foldl(
+                                Result1 = lists:foldl(
                                     % returns simp_constrs_result()
                                     fun(_, {simp_constrs_error, _} = Err) -> Err;
                                        ({BodyLocs, {GuardsGammaI, GuardCsI}, {BodyGammaI, BodyCsI}, TI}, BeforeDss) ->
@@ -205,14 +201,19 @@ simp_constr(Ctx, C) ->
                                                 end
                                     end,
                                     {simp_constrs_ok, [EquivDs]}, Bodies
-                                )
+                                ),
+                                case Result1 of
+                                    {simp_constrs_ok, X} -> {[X | Success], Fails}; %need to remove the simp_constrs_ok label for the flattening later
+                                    {simp_constrs_error, _} ->  {Success, [Result1 | Fails]}
+                                end
                         end,
+                        {[], []},
                         Substs
                     ),
                     ?LOG_TRACE("MultiResults: ~w", MultiResults),
 
                     case MultiResults of 
-                        [] ->
+                        {[],[]} ->
                             % MultiResults is empty, there is no substitution,
                             % so the tally invocation for typing the scrutiny above failed.
                             % Hence, we return an error
@@ -229,20 +230,14 @@ simp_constr(Ctx, C) ->
                                     ?LOG_DEBUG("Typing the scrutiny succeed, so it's a non-exhaustive case"),
                                     {simp_constrs_error, {non_exhaustive_case, loc(Locs)}}
                             end;
-                        _ -> case lists:search(fun is_simp_constrs_error/1, MultiResults) of
-                                false ->
-                                    LL = lists:filtermap(
-                                        fun({simp_constrs_ok, X}) -> {true, X};
-                                            (_) -> false
-                                        end,
-                                         MultiResults),
-                                    {simp_constrs_ok, lists:flatten(LL)};
-                                {value, Err} ->
-                                    % there are nested errors, return the first
-                                    % TODO Should we return really an arbitrary error?
-                                    Err
+                        {Success, []} -> 
+                            {simp_constrs_ok, lists:flatten(Success)};
+                        {_Success, [Err | _ ]} -> 
+                            % there are nested errors, return the first
+                            % TODO Should we return really an arbitrary error?
+                            Err
                     end
-            end
+            
         end;
         {cunsatisfiable, Locs, Msg} -> [single({cunsatisfiable, Locs, Msg})];
         X -> errors:uncovered_case(?FILE, ?LINE, X)
