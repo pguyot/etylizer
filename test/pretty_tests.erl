@@ -111,7 +111,7 @@ ex1_test() ->
   B = ast_lib:ast_to_erlang_ty(A),
   Pretty = ast_lib:erlang_ty_to_ast(B),
   true = subty:is_equivalent(none, A, Pretty),
-  ?assertEqual("$0 /\\ {b, tag} /\\ not({a, tag})", pretty:render_ty(Pretty)),
+  ?assertEqual("$0 /\\ {b, tag}", pretty:render_ty(Pretty)),
 
   ok.
 
@@ -197,7 +197,7 @@ other_test() ->
   Pretty = ast_lib:erlang_ty_to_ast(B),
 
   true = subty:is_equivalent(none, V0, Pretty),
-  ?assertEqual("{a5 /\\ b, int} | {a, int}", pretty:render_ty(Pretty)),
+  ?assertEqual("{a | a5 /\\ b, int}", pretty:render_ty(Pretty)),
 
   ok.
 
@@ -342,18 +342,6 @@ tuple4_all_test() ->
 
   ok.
 
-tuple1_covariance_test() ->
-  ecache:reset_all(),
-  A = tunion([
-    ttuple([tatom(a)]),
-    ttuple([tatom(e)])
-  ]),
-  B = ast_lib:ast_to_erlang_ty(A),
-  Pretty = ast_lib:erlang_ty_to_ast(B),
-  true = subty:is_equivalent(none, A, Pretty),
-  ?assertEqual("{a | e}", pretty:render_ty(Pretty)),
-
-  ok.
 
 tuple1_1_test() ->
   ecache:reset_all(),
@@ -377,12 +365,43 @@ tuple1_1_neg_test() ->
 
   ok.
 
-atom_neg_test() ->
+tuple1_union_test() ->
   ecache:reset_all(),
-  A = tnegate(tatom(a)),
+  A = tunion([
+    ttuple([tatom(a)]),
+    ttuple([tatom(e)])
+  ]),
   B = ast_lib:ast_to_erlang_ty(A),
   Pretty = ast_lib:erlang_ty_to_ast(B),
   true = subty:is_equivalent(none, A, Pretty),
-  ?assertEqual("not(a)", pretty:render_ty(Pretty)),
+  ?assertEqual("{a | e}", pretty:render_ty(Pretty)),
+
+  ok.
+
+tuple1_intersect_test() ->
+  ecache:reset_all(),
+  A = tintersect([
+    ttuple([tatom(a)]),
+    ttuple([tatom(e)])
+  ]),
+  B = ast_lib:ast_to_erlang_ty(A),
+  Pretty = ast_lib:erlang_ty_to_ast(B),
+  true = subty:is_equivalent(none, A, Pretty),
+  ?assertEqual("none()", pretty:render_ty(Pretty)),
+
+  ok.
+
+tuple1_intersect2_test() ->
+  ecache:reset_all(),
+  A = tintersect([
+    ttuple([tunion([tatom(a), tatom(b)])]),
+    ttuple([tatom(b)]),
+    ttuple([tany()]),
+    ttuple([tatom()])
+  ]),
+  B = ast_lib:ast_to_erlang_ty(A),
+  Pretty = ast_lib:erlang_ty_to_ast(B),
+  true = subty:is_equivalent(none, A, Pretty),
+  ?assertEqual("{b}", pretty:render_ty(Pretty)),
 
   ok.
