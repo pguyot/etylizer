@@ -20,34 +20,23 @@ is_empty_coclause(_Pos, _Neg, {ty_ref, 1}) -> true;
 is_empty_coclause(_Pos, _Neg, T) -> ty_rec:is_empty(T).
 is_empty(TyBDD) -> dnf(TyBDD, {fun is_empty_coclause/3, fun is_empty_union/2}).
 normalize(Ty, Fixed, M) -> 
-  error({todo, Ty}).
-  % dnf(Ty, {
-  %   fun(Pos, Neg, DnfTy) -> normalize_coclause(Pos, Neg, DnfTy, Fixed, M) end,
-  %   fun constraint_set:meet/2
-  % }).
+  dnf(Ty, {
+    fun(Pos, Neg, DnfTy) -> normalize_coclause(Pos, Neg, DnfTy, Fixed, M) end,
+    fun constraint_set:meet/2
+  }).
 
 % module specific implementations
-normalize_coclause(PVar, NVar, Ty, Fixed, M) ->
-  case ty_rec:empty() of
-    Ty -> [[]];
-    _ ->
-      case ty_ref:is_normalized_memoized(Ty, Fixed, M) of
-        true ->
-          % TODO test case
-          error({todo, extract_test_case, memoize_function}); %[[]];
-        miss ->
-          error(todo)
-          % memoize only non-variable component t0
-          % ty_rec:normalize(Ty, PVar, NVar, Fixed, sets:union(M, sets:from_list([List])))
-      end
-  end.
-
+normalize_coclause([], [], Ty, Fixed, M) ->
+  ty_rec:normalize(Ty, Fixed, M);
+normalize_coclause(PVar, NVar, DnfTy, Fixed, M) ->
+  Ty = ty_rec:tuple(1, dnf_var_ty_ref:ref(DnfTy)),
+  % ntlv rule
+  ty_variable:normalize(Ty, PVar, NVar, Fixed, fun(Var) -> ty_rec:tuple(1, dnf_var_ty_ref:var(Var)) end, M).
 
 
 % substitution delegates to dnf_ty_tuple substitution
 apply_to_node(Node, Map, Memo) ->
-  error(todo),
-  dnf_ty_list:substitute(Node, Map, Memo, fun(N, Subst, M) -> ty_list:substitute(N, Subst, M) end).
+  ty_rec:substitute(Node, Map, Memo).
 
 
 % see comment in bdd.hrl

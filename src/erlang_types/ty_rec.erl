@@ -7,7 +7,7 @@
 -define(F(Z), fun() -> Z end).
 
 
--export([equal/2, empty/0, any/0]).
+-export([has_ref/2, equal/2, empty/0, any/0]).
 -export([union/2, negate/1, intersect/2, diff/2, is_any/1]).
 -export([is_empty/1, extract_variables/1]).
 
@@ -587,6 +587,10 @@ multi_empty_functions({Default, AllFunctions}) ->
 is_any(_Arg0) ->
   erlang:error(any_not_implemented). % TODO needed?
 
+% need explicit because dnf_var_ty_ref usage
+% memoization up to Fixed variables only
+normalize({ty_ref, 0}, _Fixed, _M) -> [];
+normalize({ty_ref, 1}, _Fixed, _M) -> [[]];
 normalize(TyRef, Fixed, M) ->
   case ty_ref:normalized_memoized({TyRef, Fixed}) of
     miss ->
@@ -670,6 +674,8 @@ substitute(TyRef, SubstituteMap) ->
 
 % var => ty_rec
 % once the map arrives here, is should be the same again
+substitute(T = {ty_ref, 0}, _, _) -> T;
+substitute(T = {ty_ref, 1}, _, _) -> T;
 substitute(TyRef, SubstituteMap, OldMemo) ->
 %%  io:format(user, "Doing a substitution with ~p and map ~p~n", [ty_ref:load(TyRef), SubstituteMap]),
   case maps:get(TyRef, OldMemo, undefined) of
@@ -715,7 +721,7 @@ substitute(TyRef, SubstituteMap, OldMemo) ->
 
 tuple_keys(TyRef) ->
   Ty = ty_ref:load(TyRef),
-  {_T, Map} = Ty#ty.tuple,
+  {_T, _, _, Map} = Ty#ty.tuple,
   maps:fold(fun(K,_,AccIn) -> [K | AccIn] end, [], Map).
 
 function_keys(TyRef) ->
@@ -783,9 +789,12 @@ multi_substitute_fun(DefaultFunction, AllFunctions, SubstituteMap, Memo) ->
 
   {NewDefaultFunction, NewOtherFunctions}.
 
+has_ref({ty_ref, 0}, _) -> false;
+has_ref({ty_ref, 1}, _) -> false;
+has_ref(TyRef1 = {ty_ref, _}, TyRef) -> has_ref(ty_ref:load(TyRef1), TyRef);
 has_ref(#ty{list = Lists, tuple = {Default, T0, T1, AllTuple}, function = {DefaultF, AllFunction}}, TyRef) ->
   % TODO sanity remove
-  false = dnf_var_ty_tuple:has_ref(T0, TyRef), % should never happen
+  false = dnf_var_ty_bool:has_ref(T0, TyRef), % should never happen
   false = dnf_var_ty_tuple:has_ref(Default, TyRef), % should never happen
   false = dnf_var_ty_function:has_ref(DefaultF, TyRef), % should never happen
   dnf_var_ty_list:has_ref(Lists, TyRef)
@@ -839,6 +848,8 @@ pi(function, TyRef) ->
   Ty = ty_ref:load(TyRef),
   Ty#ty.function.
 
+all_variables({ty_ref, 0}) -> [];
+all_variables({ty_ref, 1}) -> [];
 all_variables(TyRef) ->
   #ty{
     predef = Predefs,
