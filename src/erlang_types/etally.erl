@@ -51,8 +51,10 @@ solve(SaturatedSetOfConstraintSets, FixedVariables) ->
 
 solve_single([], Equations, _) -> Equations;
 solve_single([{SmallestVar, Left, Right} | Cons], Equations, Fix) ->
-  io:format(user,"Solving: ~p < ~p < ~p~n", [Left, SmallestVar, Right]),
-  io:format(user,"~s ~n<~n~p<~n~s~n", [ty_rec:print(Left), SmallestVar, ty_rec:print(Right)]),
+  % io:format(user,"Solving: ~p < ~p < ~p~n", [Left, SmallestVar, Right]),
+  % io:format(user,"~s ~n", [ty_rec:print(Left)]),
+  % io:format(user,"XXXXXXXXXx: ~p < ~p < ~p~n", [Left, SmallestVar, Right]),
+  % io:format(user,"~s ~n<~n~p<~n~s~n", [ty_rec:print(Left), SmallestVar, ty_rec:print(Right)]),
   % constraints are already sorted by variable ordering
   % smallest variable first
   % also TODO: why are variable names atoms?

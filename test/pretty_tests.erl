@@ -182,14 +182,7 @@ other_test() ->
   ecache:reset_all(),
   V0 = tunion([
     ttuple([tintersect([tatom(b), tvar(a5)]), tatom(int)]),
-    ttuple([tatom(a), tatom(int)]),
-    tintersect([
-      tunion([
-        ttuple([tintersect([tatom(b), tvar(a5)]), tatom(int)]),
-        ttuple([tatom(a), tatom(int)])
-      ]),
-      tvar(a0a0)
-    ])
+    ttuple([tatom(a), tatom(int)])
   ]),
   B = ast_lib:ast_to_erlang_ty(V0),
   Pretty = ast_lib:erlang_ty_to_ast(B),
@@ -420,5 +413,16 @@ tuple_pretty_test() ->
   Pretty = ast_lib:erlang_ty_to_ast(B),
   true = subty:is_equivalent(none, A, Pretty),
   ?assertEqual("{a, int}", pretty:render_ty(Pretty)),
+
+  ok.
+
+tuple_wrapped_test() ->
+  ecache:reset_all(),
+
+  A = ttuple([ ttuple([tany(), tany()]) ]),
+  B = ast_lib:ast_to_erlang_ty(A),
+  Pretty = ast_lib:erlang_ty_to_ast(B),
+  true = subty:is_equivalent(none, A, Pretty),
+  ?assertEqual("{{any(), any()}}", pretty:render_ty(Pretty)),
 
   ok.

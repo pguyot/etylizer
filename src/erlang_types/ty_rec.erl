@@ -160,12 +160,13 @@ transform_p(TyRef, Ops =
 
   Ety = Union(maps:values(Mapped)),
   Sanity = ast_lib:ast_to_erlang_ty(Ety),
-%%  io:format(user,"<~p> Sanity: ~p~n", [Ref, Sanity]),
+  % io:format(user,"<~p> Sanity: ~p~n", [Ety, Sanity]),
   % leave this sanity check for a while
   case is_equivalent(TyRef, Sanity) of
     true -> ok;
     false ->
       io:format(user, "--------~n", []),
+      io:format(user, "~p~n", [TyRef]),
       io:format(user, "~p~n", [ty_ref:load(TyRef)]),
       io:format(user, "~p~n", [Ety]),
       io:format(user, "~p~n", [ty_ref:load(Sanity)]),
@@ -331,43 +332,31 @@ maybe_remove_redundant_negative_variables(CurrentMap, T1, T, Pv, Nv, Pv1, Nv1) -
 
 multi_transform(DefaultT, T0, T1, Tn, Ops = #{any_tuple_i := Tuple, any_tuple := Tuples, negate := Negate, union := Union, intersect := Intersect}) ->
   Xd = dnf_var_ty_tuple:transform(DefaultT, Ops),
-  X0 = dnf_var_ty_bool:transform(T0, Ops#{any => fun() -> Tuple(0) end }),
-  X1 = dnf_var_ty_ref:transform(T1, Ops#{any => fun() -> Tuple(1) end }),
+  X0 = maybe_intersect(dnf_var_ty_bool:transform(T0, Ops#{any => fun() -> Tuple(0) end }), Tuple(0), Intersect),
+  X1 = maybe_intersect(dnf_var_ty_ref:transform(T1, Ops#{any => fun() -> Tuple(1) end }), Tuple(1), Intersect),
   Xs = lists:map(fun
-    ({Size, Tup}) when Size > 2 -> dnf_var_ty_tuple:transform(Tup, Ops#{tuple_dim => Size}); % its a var dnf tuple!
+    ({Size, Tup}) when Size > 2 -> 
+      R = dnf_var_ty_tuple:transform(Tup, Ops#{tuple_dim => Size}),
+      maybe_intersect(R, Tuple(Size), Intersect);
     ({2, Tup}) ->
     % if a tuple is semantically equivalent to empty, return empty instead of the empty tuple
     case dnf_var_ty_tuple:is_empty(Tup) of
       true -> dnf_var_ty_tuple:transform(dnf_var_ty_tuple:empty(), Ops);
-      _ -> dnf_var_ty_tuple:transform(Tup, Ops)
+      _ -> 
+        R = dnf_var_ty_tuple:transform(Tup, Ops),
+        % just transforming resulst in {predef, any} which is wrong
+        maybe_intersect(R, Tuple(2), Intersect)
     end
                  end, maps:to_list(Tn)),
   Sizes = maps:keys(Tn),
 
+  % io:format(user, "Default: ~p~n", [DefaultT]),
+  % io:format(user, "T0: ~p~n", [T0]),
+  % io:format(user, "T1: ~p~n", [T1]),
+  % io:format(user, "Tn: ~p~n", [Tn]),
   DefaultTuplesWithoutExplicitTuples = Intersect([Xd, Tuples(), Negate(Union([Tuple(0), Tuple(1)] ++ [Tuple(I) || I <- Sizes]))]),
-    % CONTINUE HERE
-    % {ty,{terminal,[]},
-%     {terminal,{{0,nil},finite}},
-%     {terminal,[]},
-%     {terminal,{terminal,0}},
-%     {{terminal,[]},
-%      {terminal,0},
-%      {terminal,{ty_ref,1}},
-%      #{2 =>
-%            {node,{var,2,'$3'},
-%                  {node,{var,3,'$4'},
-%                        {node,{var,4,'$7'},
-%                              {node,{var,5,'$8'},
-%                                    {terminal,top_2tuple},
-%                                    {terminal,[]}},
-%                              {terminal,[]}},
-%                        {terminal,[]}},
-%                  {terminal,[]}}}},
-%     {{terminal,{terminal,0}},#{}}}
-% {intersection,[{var,'$8'},{var,'$7'},{var,'$4'},{var,'$3'},{tuple_any}]}
-  io:format(user, "Default Without: ~p~n", [DefaultTuplesWithoutExplicitTuples]),
-  io:format(user, "Rest: ~p~n", [DefaultTuplesWithoutExplicitTuples]),
-  Union([DefaultTuplesWithoutExplicitTuples, Union([X0, X1] ++ Xs)]).
+  R = Union([DefaultTuplesWithoutExplicitTuples, Union([X0, X1] ++ Xs)]),
+  R.
 
 multi_transform_fun(DefaultF, F, Ops = #{any_function_i := Function, any_function := Functions, negate := Negate, union := Union, intersect := Intersect}) ->
   X1 = dnf_var_ty_function:transform(DefaultF, Ops),
