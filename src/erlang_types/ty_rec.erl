@@ -484,6 +484,7 @@ function() ->
 
 -spec intersect(ty_ref(), ty_ref()) -> ty_ref().
 intersect(TyRef1, TyRef2) ->
+  io:format(user,"Intersect: ~p with ~p~n", [TyRef1, TyRef2]),
   ty_ref:op_cache(intersect, {TyRef1, TyRef2},
     fun() ->
       #ty{predef = P1, atom = A1, interval = I1, list = L1, tuple = T1, function = F1} = ty_ref:load(TyRef1),
@@ -503,6 +504,7 @@ intersect(TyRef1, TyRef2) ->
 negate({ty_ref, 0}) -> {ty_ref, 1};
 negate({ty_ref, 1}) -> {ty_ref, 0};
 negate(TyRef1) ->
+  io:format(user,"Negate: ~p~n", [TyRef1]),
   ty_ref:op_cache(negate, {TyRef1},
     fun() ->
       #ty{predef = P1, atom = A1, interval = I1, list = L1, tuple = {DT, T0, T1, Tn}, function = {DF, F}} = ty_ref:load(TyRef1),
@@ -525,6 +527,7 @@ diff(A, B) ->
 
 -spec union(ty_ref(), ty_ref()) -> ty_ref().
 union(A, B) ->
+  io:format(user,"Union: ~p with ~p~n", [A, B]),
   ty_ref:op_cache(union, {A, B},
     fun() ->
   negate(intersect(negate(A), negate(B)))
@@ -894,7 +897,8 @@ recursive_definition_test() ->
   % (alpha, Lists)
   Alpha = ty_variable:new("alpha"),
   AlphaTy = ty_rec:variable(Alpha),
-  Tuple = ty_rec:tuple(2, dnf_var_ty_tuple:tuple(dnf_ty_tuple:tuple(ty_tuple:tuple([AlphaTy, Lists])))),
+  Tuple = ty_rec:tuple(2, dnf_var_ty_tuple:tuple(dnf_ty_product:tuple(ty_tuple:tuple([AlphaTy, Lists])))),
+  io:format(user,"Union of  ~p with ~p~n", [Nil, Tuple]),
   Recursive = ty_rec:union(Nil, Tuple),
 
   ty_ref:define_ty_ref(Lists, ty_ref:load(Recursive)),
@@ -903,11 +907,13 @@ recursive_definition_test() ->
   SubstMap = #{Alpha => SomeBasic},
   Res = ty_rec:substitute(Lists, SubstMap),
 
-  Tuple2 = ty_rec:tuple(2, dnf_var_ty_tuple:tuple(dnf_ty_tuple:tuple(ty_tuple:tuple([SomeBasic, ListsBasic])))),
+  io:format(user,"O ~n", []),
+  Tuple2 = ty_rec:tuple(2, dnf_var_ty_tuple:tuple(dnf_ty_product:tuple(ty_tuple:tuple([SomeBasic, ListsBasic])))),
   Expected = ty_rec:union(Nil, Tuple2),
   % Expected is invalid after define_ty_ref!
   NewTy = ty_ref:define_ty_ref(ListsBasic, ty_ref:load(Expected)),
 
+  io:format(user,"O ~n", []),
   true = ty_rec:is_equivalent(Res, NewTy),
   ok.
 

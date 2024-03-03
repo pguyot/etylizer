@@ -227,9 +227,7 @@ tuple2_union_test() ->
     ttuple([(tatom()), (tatom(c))])
   ]),
   B = ast_lib:ast_to_erlang_ty(A),
-  io:format(user,"Ertlang ty to ast: ~p~n", [B]),
   Pretty = ast_lib:erlang_ty_to_ast(B),
-  io:format(user,"Pretty: ~p~n", [Pretty]),
   true = subty:is_equivalent(none, A, Pretty),
   ?assertEqual("{atom(), c}", pretty:render_ty(Pretty)),
 
@@ -427,4 +425,15 @@ tuple_wrapped_test() ->
   true = subty:is_equivalent(none, A, Pretty),
   ?assertEqual("{{any(), any()}}", pretty:render_ty(Pretty)),
 
+  ok.
+
+recursive_test() ->
+  ecache:reset_all(),
+  Lists = r,
+
+  % (alpha, Lists)
+  Alpha = ty_variable:new("alpha"),
+  AlphaTy = ty_rec:variable(Alpha),
+  io:format(user,"O ~n", []),
+  Tuple = ty_rec:tuple(2, dnf_var_ty_tuple:tuple(dnf_ty_product:tuple(ty_tuple:tuple([AlphaTy, Lists])))),
   ok.

@@ -51,15 +51,9 @@ solve(SaturatedSetOfConstraintSets, FixedVariables) ->
 
 solve_single([], Equations, _) -> Equations;
 solve_single([{SmallestVar, Left, Right} | Cons], Equations, Fix) ->
-  % io:format(user,"Solving: ~p < ~p < ~p~n", [Left, SmallestVar, Right]),
-  % io:format(user,"~s ~n", [ty_rec:print(Left)]),
-  % io:format(user,"XXXXXXXXXx: ~p < ~p < ~p~n", [Left, SmallestVar, Right]),
-  % io:format(user,"~s ~n<~n~p<~n~s~n", [ty_rec:print(Left), SmallestVar, ty_rec:print(Right)]),
   % constraints are already sorted by variable ordering
   % smallest variable first
-  % also TODO: why are variable names atoms?
   FreshVar = ast_lib:ast_to_erlang_ty_var(stdtypes:tvar(list_to_atom("mu" ++ erlang:atom_to_list(ty_variable:name(SmallestVar)) ++ integer_to_list(ty_variable:get_new_id())))),
-  %ty_rec:variable(ty_variable:new("tally_fresh")),
   FreshTyVar = ty_rec:variable(FreshVar),
   NewEq = Equations ++ [{eq, SmallestVar, ty_rec:intersect(ty_rec:union(Left, FreshTyVar), Right)}],
 
