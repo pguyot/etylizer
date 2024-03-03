@@ -9,7 +9,7 @@
 
 -export([is_empty/1, normalize/6, substitute/4]).
 -export([tuple/1, all_variables/1, transform/2]).
--export([has_ref/2, any/0, empty/0, equal/2, union/2, intersect/2, negate/1, diff/2]).
+-export([has_ref/2, any/0, empty/0, equal/2, union/2, intersect/2, negate/1, diff/2, compare/2]).
 
 -define(T, top_2tuple).
 -define(B, []).
@@ -23,6 +23,9 @@ equal(?T, _) -> false;
 equal(_, ?T) -> false;
 equal(A, A) -> true;
 equal(_, _) -> false.
+% dummy not needed
+compare(X, X) -> 0;
+compare(X, Y) -> case X < Y of true -> -1; _ -> 1 end.
 
 union(?T, _) -> ?T;
 union(_, ?T) -> ?T;

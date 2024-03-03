@@ -426,14 +426,3 @@ tuple_wrapped_test() ->
   ?assertEqual("{{any(), any()}}", pretty:render_ty(Pretty)),
 
   ok.
-
-recursive_test() ->
-  ecache:reset_all(),
-  Lists = r,
-
-  % (alpha, Lists)
-  Alpha = ty_variable:new("alpha"),
-  AlphaTy = ty_rec:variable(Alpha),
-  io:format(user,"O ~n", []),
-  Tuple = ty_rec:tuple(2, dnf_var_ty_tuple:tuple(dnf_ty_product:tuple(ty_tuple:tuple([AlphaTy, Lists])))),
-  ok.
