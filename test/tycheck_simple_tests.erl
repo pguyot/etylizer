@@ -131,8 +131,6 @@ simple_test_() ->
     % FIXME #36 impossible branches
     "foo2",
     "inter_03_fail",
-    % FIXME #61 bad recursive types in tally
-    "tuple_04",
     % slow, see #57
     "list_pattern_02",
     "list_pattern_07",
