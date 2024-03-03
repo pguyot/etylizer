@@ -181,6 +181,21 @@ variable_union6_test() ->
 other_test() ->
   ecache:reset_all(),
   V0 = tunion([
+    tintersect([tatom(b), tvar(a5)]),
+    tatom(a)
+  ]),
+  B = ast_lib:ast_to_erlang_ty(V0),
+  io:format(user, "~p~n", [ty_ref:load(B)]),
+  Pretty = ast_lib:erlang_ty_to_ast(B),
+
+  true = subty:is_equivalent(none, V0, Pretty),
+  ?assertEqual("{a | a5 /\\ b, int}", pretty:render_ty(Pretty)),
+
+  ok.
+
+other2_test() ->
+  ecache:reset_all(),
+  V0 = tunion([
     ttuple([tintersect([tatom(b), tvar(a5)]), tatom(int)]),
     ttuple([tatom(a), tatom(int)])
   ]),
