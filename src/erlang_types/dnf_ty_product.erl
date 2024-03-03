@@ -114,6 +114,7 @@ is_empty(TyBDD) ->
 is_empty_union(F1, F2) ->
   F1() andalso F2().
 
+% TODO replace n-tuple implementation with simple 2-tuple implementation
 is_empty_coclause({Pos, Neg, T}) ->
   case {Pos, Neg, bdd_bool:empty()} of
     {_, _, T} -> true;
@@ -196,14 +197,8 @@ phi_norm(Size, BigS, [Ty | N], Fixed, M) ->
   ).
 
 
-
-
-
-
-
 % =================
 % CDuce code border
-
 
 normal_cduce(X) ->
   cleanup(lists:foldl(fun line/2, [], X)).
@@ -277,7 +272,6 @@ add(Root, T1, T2, [{S1, S2} | Rem]) ->
       case not ty_rec:is_empty(J) of
         true -> add(NewRoot2, J, T2, Rem);
         _ -> 
-          %lists:reverse(NewRoot2) ++ Rem
           lists:reverse(NewRoot2) ++ Rem
       end
   end.
