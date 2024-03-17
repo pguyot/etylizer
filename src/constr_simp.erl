@@ -180,9 +180,11 @@ simp_constr(Ctx, C) ->
                                 % returns simp_constrs_result()
                                 fun(_, {simp_constrs_error, _} = Err) -> Err;
                                     ({BodyLocs, {GuardsGammaI, GuardCsI}, {BodyGammaI, BodyCsI}, TI}, BeforeDss) ->
+
+                                        
                                         NewGuardsCtx = inter_env(Ctx, apply_subst_to_env(Subst, GuardsGammaI)),
-                                        simp_constrs_if_ok(simp_constrs(NewGuardsCtx, GuardCsI),
-                                            fun(GuardDss, _) ->
+                                        simp_constrs_if_ok2(simp_constrs(NewGuardsCtx, GuardCsI),
+                                            fun(GuardDs) ->
                                                 MatchTy = subst:apply(Subst, TI),
                                                 IsBottom = subty:is_subty(Ctx#ctx.symtab,
                                                                             MatchTy,
@@ -194,7 +196,7 @@ simp_constr(Ctx, C) ->
                                                                     pretty:render_ty(MatchTy),
                                                                     pretty:render_ty(TI)
                                                                     ),
-                                                        cross_union(BeforeDss, GuardDss);
+                                                        cross_union(BeforeDss, singleds(GuardDs));
                                                     {true, report} ->
                                                         {simp_constrs_error, {redundant_branch, loc(BodyLocs)}};
                                                     _ ->
@@ -211,7 +213,7 @@ simp_constr(Ctx, C) ->
                                                             inter_env(Ctx,
                                                                     apply_subst_to_env(Subst, BodyGammaI)),
                                                         BodyDss = simp_constrs(NewBodyCtx, BodyCsI),
-                                                        cross_union(cross_union(BeforeDss, GuardDss), BodyDss)
+                                                        cross_union(cross_union(BeforeDss, singleds(GuardDs)), BodyDss)
                                                 end
                                             end)
                                 end,
@@ -220,7 +222,7 @@ simp_constr(Ctx, C) ->
                     end,
                     Substs
                 ),
-                ?LOG_INFO("MultiResults: ~p", MultiResults),
+                % ?LOG_INFO("MultiResults: ~p", MultiResults),
                 case lists:filtermap(
                     fun({simp_constrs_ok, X}) -> {true, X};
                         (_) -> false
@@ -253,7 +255,7 @@ simp_constr(Ctx, C) ->
                                 Err
                         end;
                     LL ->
-                        ?LOG_INFO("Got: ~p", lists:flatten(LL)),
+                        % ?LOG_INFO("Got: ~p", lists:flatten(LL)),
                         % LL has type nonempty_list(nonempty_list(constr:simp_constrs())).
                         % It contains the successful results.
                         {simp_constrs_ok, lists:flatten(LL)}
@@ -287,6 +289,9 @@ fresh_ty_scheme(Ctx, {ty_scheme, Tyvars, T}) ->
 
 -spec single(T) -> sets:set(T).
 single(X) -> sets:from_list([X]).
+
+singleds(X) ->
+    {simp_constrs_ok, [X]}.
 
 -spec loc(constr:locs()) -> ast:loc().
 loc(Locs) ->
@@ -341,6 +346,7 @@ get_substs(Substs, Locs) ->
                             end,
                             sets:new(),
                             Alphas),
+                        io:format(user, "~p~n~p~n", [Subst, EquivCs]),
                       {Subst, EquivCs}
               end,
               L
