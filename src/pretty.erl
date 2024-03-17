@@ -264,7 +264,7 @@ constr_bodies(L) ->
         lists:map(
           fun({Locs, {GuardEnv, GuardCs}, {BodyEnv, BodyCs}, T}) ->
                   brackets(comma_sep([locs(Locs), constr_env(GuardEnv), constr(GuardCs),
-                                      constr_env(BodyEnv), constr(BodyCs), ty(T)]))
+                                      constr_env(BodyEnv), constr(BodyCs), constr(T)]))
           end,
           L))).
 

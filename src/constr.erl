@@ -38,6 +38,6 @@
                         {ast:ty(), ast:ty()}, % exhaustiveness check
                         [constr_case_body()]}.
 -type constr_case_body() ::
-        {locs(), Guard::constrs_with_env(), Body::constrs_with_env(), BodyCond::ast:ty()}.
+        {locs(), Guard::constrs_with_env(), Body::constrs_with_env(), BodyCond::constrs()}.
 -type constrs_with_env() :: {constr_env(), constrs()}.
 -type constr_unsatisfiable() :: {cunsatisfiable, ast:loc(), string()}.
