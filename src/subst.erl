@@ -10,7 +10,8 @@
     clean/2,
     apply/2,
     domain/1,
-    from_list/1
+    from_list/1,
+    collect_vars/4
 ]).
 
 -type t() :: #{ ast:ty_varname() => ast:ty() }.

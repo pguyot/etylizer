@@ -17,7 +17,7 @@ tally(Constraints, FixedVars) ->
   Saturated = ?TIME(tally_saturate, tally_saturate(Normalized, FixedVars)),
   Solved = ?TIME(tally_solve, tally_solve(Saturated, FixedVars)),
   % sanity: every substitution satisfies all given constraints, if no error
-  ?SANITY(substitutions_solve_input_constraints, case Solved of {error, _} -> ok; _ -> [ true = is_valid_substitution(Constraints, Subst) || Subst <- Solved] end),
+  ?SANITY(substitutions_solve_input_constraints, case Solved of {error, _} -> ok; _ -> [ true = is_valid_substitution(Constraints, Subst, FixedVars) || Subst <- Solved] end),
   Solved.
 
 tally_normalize(Constraints, FixedVars) ->
@@ -119,11 +119,45 @@ sanity_substitution({Var, _To}, Ty, TyAfter) ->
 
 
 % sanity check
-is_valid_substitution([], _) -> true;
-is_valid_substitution([{Left, Right} | Cs], Substitution) ->
+is_valid_substitution([], _, _) -> true;
+is_valid_substitution([{Left, Right} | Cs], Substitution, Fixed) ->
   SubstitutedLeft = ty_rec:substitute(Left, Substitution),
   SubstitutedRight = ty_rec:substitute(Right, Substitution),
-  Res = ty_rec:is_subtype(SubstitutedLeft, SubstitutedRight) ,
+  {T, Res} = timer:tc(fun() -> ty_rec:is_subtype(SubstitutedLeft, SubstitutedRight) end),
+
+  % VarPositions = collect_vars(Ty, 0, #{}, Fixed),
+  X = ty_rec:intersect(SubstitutedLeft, ty_rec:negate(SubstitutedRight)),
+
+  {T3, AllCleaned} = timer:tc(fun() -> 
+    E = ast_lib:erlang_ty_to_ast(X),
+    ast_lib:ast_to_erlang_ty(subst:clean(E, Fixed))
+  end),
+  {T2, Res2} = timer:tc(fun() -> ty_rec:is_empty(AllCleaned) end),
+
+
+  case Res of
+    Res2 -> ok;
+    _ -> 
+      io:format(user, "== Orig: ~p  Cleaned: ~p~n", [Res, Res2]),
+      io:format(user, "== Substitution: ~p~n", [Substitution]),
+      io:format(user, "~n== Left: ~n~s~n", [ty_rec:print(Left)]),
+      io:format(user, "~n== Left Subst: ~n~s~n", [ty_rec:print(SubstitutedLeft)]),
+      io:format(user, "~n== Right: ~n~s~n", [ty_rec:print(Right)]),
+      io:format(user, "~n== Right Subst: ~n~s~n", [ty_rec:print(SubstitutedRight)]),
+      io:format(user, "~n== All Cleaned: ~n~s~n", [ty_rec:print(AllCleaned)]),
+
+      error(sanity)
+  end,
+      % io:format(user, "~n== All Cleaned: ~n~p~n", [(E)]),
+  case ((T div (T3+1)) > 10) of
+    true -> 
+      io:format(user, "~p,~p,~p~n", [T div (T3+1), T, T3]),
+      io:format(user, "Left: ~s ->~nThen: ~s~n", [ty_rec:print(Left), ty_rec:print(SubstitutedLeft)]),
+      io:format(user, "Right: ~s ->~nThen: ~s~n", [ty_rec:print(Right), ty_rec:print(SubstitutedRight)]);
+    _ -> ok
+  end,
+    
+
   case Res of
     false ->
       io:format(user, "Left: ~s -> ~s~n", [ty_rec:print(Left), ty_rec:print(SubstitutedLeft)]),
@@ -131,4 +165,4 @@ is_valid_substitution([{Left, Right} | Cs], Substitution) ->
     _ -> ok
   end,
   Res andalso
-    is_valid_substitution(Cs, Substitution).
+    is_valid_substitution(Cs, Substitution, Fixed).

@@ -67,18 +67,32 @@ simp_constrs_if_ok(X, _) -> X.
 
 simp_constrs_if_ok2({simp_constrs_ok, []}, F) -> error(todo_empty);
 simp_constrs_if_ok2({simp_constrs_ok, [Ds]}, F) -> 
+    io:format(user,"Single solution...~n", []),
     F(Ds);
 simp_constrs_if_ok2({simp_constrs_ok, [Ds, Ds2 | Dss]}, F) -> 
+    io:format(user,"Multi cont...~n", []),
     SingleResults = F(Ds),
     case SingleResults of
         {simp_constrs_error, _} -> 
-            simp_constrs_if_ok2(Dss, F);
+            simp_constrs_if_ok2([Ds2 | Dss], F);
         _ -> 
-            Other = simp_constrs_if_ok2(Dss, F),
+            Other = simp_constrs_if_ok2([Ds2 | Dss], F),
             ?LOG_INFO("~p", [Other]),
             cross_union(SingleResults, Other)
     end;
-simp_constrs_if_ok2(X, _) -> X.
+simp_constrs_if_ok2(X, _) -> 
+    io:format(user,"ERROR...~n", []),
+    X.
+
+simp_tally_if_ok({error, _}, Locs, Cont) -> Cont(no_solution);
+simp_tally_if_ok([], Locs, Cont) -> Cont(no_solution);
+simp_tally_if_ok([Sol | Sols], Locs, Cont) -> 
+    Solx = get_subst(Sol, Locs),
+    Res = Cont(Solx),
+    case Res of
+        {simp_constrs_error, _} -> simp_tally_if_ok(Sols, Locs, Cont);
+        _ -> Res % return solution
+    end.
 
 -spec cross_union(simp_constrs_result(), simp_constrs_result()) -> simp_constrs_result().
 cross_union({simp_constrs_error, _} = Err, _) -> Err;
@@ -107,6 +121,41 @@ simp_constrs(Ctx, Cs) ->
             end)
       end,
       zero_simp_constrs_result(), Cs).
+
+
+list_ds([], Ctx, All, Cont) -> Cont(All);
+list_ds([{BodyLocs, {GuardsGammaI, GuardCsI}, {BodyGammaI, BodyCsI}, CIwhen}], Ctx, All, Cont) -> 
+    simp_constrs_if_ok2(simp_constrs(Ctx, CIwhen), fun(D) -> list_ds([], Ctx, [{BodyLocs, {GuardsGammaI, GuardCsI}, {BodyGammaI, BodyCsI}, D} | All], Cont) end);
+list_ds([{BodyLocs, {GuardsGammaI, GuardCsI}, {BodyGammaI, BodyCsI}, CIwhen} | Cs], Ctx, All, Cont) ->
+    simp_constrs_if_ok2(simp_constrs(Ctx, CIwhen), fun(D) -> 
+        list_ds(Cs, Ctx, [{BodyLocs, {GuardsGammaI, GuardCsI}, {BodyGammaI, BodyCsI}, D} |All], Cont) 
+    end).
+
+list_tally([], Locs, DsScrut, Ctx, All, Cont) -> Cont(All);
+list_tally([{BodyLocs, {GuardsGammaI, GuardCsI}, {BodyGammaI, BodyCsI}, DIwhen} | Next], Locs, DsScrut, Ctx, All, Cont) ->
+    ?LOG_INFO("Checking branch solutions for:~n~s", pretty:render_constr(sets:union(DIwhen, DsScrut))),
+    % returns a single thehta_j (backtracks) or none
+    simp_tally_if_ok(tally:tally(Ctx#ctx.symtab, sets:union(DsScrut, DIwhen)), Locs, 
+    fun
+        ({Subst, EquivDs}) -> 
+            % found solution, generate Ci -> Di with new context
+            NewGuardsCtx = inter_env(Ctx, apply_subst_to_env(Subst, GuardsGammaI)),
+            simp_constrs_if_ok2(simp_constrs(NewGuardsCtx, GuardCsI), fun(GuardDi) -> 
+                ?LOG_INFO("Not ignoring branch at ~s", ast:format_loc(loc(BodyLocs))),
+                % here we have a valid Di
+                % descend into the body
+                NewBodyCtx = inter_env(Ctx, apply_subst_to_env(Subst, BodyGammaI)),
+                simp_constrs_if_ok2(simp_constrs(NewBodyCtx, BodyCsI), fun(BodyDsI) -> 
+                    list_tally(Next, Locs, DsScrut, Ctx, All ++ [{EquivDs, GuardDi, BodyDsI}], Cont)
+                end)
+            end);
+        (no_solution) -> 
+            % here we skip the branch at Di = 0
+            % TODO print constrs
+            ?LOG_INFO("Ignoring branch at ~s, D U D_i equivalent to none()", ast:format_loc(loc(BodyLocs))),
+            % guard di is then empty
+            list_tally(Next, Locs, DsScrut, Ctx, All ++ [{empty}], Cont)
+    end).
 
 -spec simp_constr(ctx(), constr:constr()) -> simp_constrs_result().
 simp_constr(Ctx, C) ->
@@ -138,130 +187,53 @@ simp_constr(Ctx, C) ->
                     constr_gen:sanity_check(CsScrut, TyMap0);
                 error -> ok
             end,
-            Z = simp_constrs(Ctx, CsScrut),
-            simp_constrs_if_ok2(Z, fun(DsScrut) -> 
-                ?LOG_DEBUG("Solving constraints for scrutiny of case at ~s in order to check " ++
-                            "which branches should be ignored.~n" ++
-                            "Env: ~s~nConstraints for scrutiny:~n~s~n" ++
-                            "exhaustivness check: ~s <= ~s",
-                            ast:format_loc(loc(Locs)),
-                            pretty:render_poly_env(Ctx#ctx.env),
-                            pretty:render_constr(DsScrut),
-                            pretty:render_ty(ExhauLeft),
-                            pretty:render_ty(ExhauRight)),
+            ?LOG_INFO("Solving constraints for scrutiny of case at ~s in order to check " ++
+                        "which branches should be ignored.~n" ++
+                        "Env: ~s~nConstraints for scrutiny:~n~s~n" ++
+                        "exhaustivness check: ~s <= ~s",
+                        ast:format_loc(loc(Locs)),
+                        pretty:render_poly_env(Ctx#ctx.env),
+                        pretty:render_constr(CsScrut),
+                        pretty:render_ty(ExhauLeft),
+                        pretty:render_ty(ExhauRight)),
+
+            simp_constrs_if_ok2(simp_constrs(Ctx, CsScrut), fun(DsScrutWEx) -> 
+                ?LOG_INFO("Checking solution for scrutiny of case at ~s in order to check " ++
+                        "which branches should be ignored.~n" ++
+                        "Env: ~s~nConstraints for scrutiny:~n~s~n" ++
+                        "exhaustivness check: ~s <= ~s",
+                        ast:format_loc(loc(Locs)),
+                        pretty:render_poly_env(Ctx#ctx.env),
+                        pretty:render_constr(DsScrutWEx),
+                        pretty:render_ty(ExhauLeft),
+                        pretty:render_ty(ExhauRight)),
+
+                % TODO does backtracking and multiple solutions work?
+                % TODO Exhau missing from rule?
                 Exhau = sets:from_list([{csubty, Locs, ExhauLeft, ExhauRight}]),
-                {Substs, Delta} =
-                    utils:timing(
-                        fun() ->
-                            Ds = sets:union(DsScrut, Exhau),
-                            get_substs(tally:tally(Ctx#ctx.symtab, Ds), Locs)
-                        end),
-                ?LOG_TRACE("Env=~s", pretty:render_poly_env(Ctx#ctx.env)),
-                case Substs of
-                    [] ->
-                        % a type error is returned later
-                        ?LOG_DEBUG("Tally time: ~pms, no substitutions returned from tally", Delta);
-                    [{S, _}] ->
-                        ?LOG_DEBUG("Tally time: ~pms, unique substitution:~n~s", Delta, pretty:render_subst(S));
-                    L ->
-                        ?LOG_DEBUG("Tally time: ~pms, ~w substitutions: ~s",
-                                    Delta, length(L),
-                                    pretty:render_substs(lists:map(fun({S, _}) -> S end, L)))
-                end,
-                % Non-determinism here because of multiple solutions from tally
-                % MultiResults has type [simp_constrs_result()]
-                % It contains a simp_constrs_result() for each substitution returned from tally.
-                MultiResults = lists:map(
-                    fun({Subst, EquivDs}) ->
-                            % returns simp_constrs_result(): if there is at least one
-                            % branch that fails then the whole cases fails for the given
-                            % substitution
-                            lists:foldl(
-                                % returns simp_constrs_result()
-                                fun(_, {simp_constrs_error, _} = Err) -> Err;
-                                    ({BodyLocs, {GuardsGammaI, GuardCsI}, {BodyGammaI, BodyCsI}, TI}, BeforeDss) ->
+                DsScrut = sets:union([DsScrutWEx]),
 
-                                        
-                                        NewGuardsCtx = inter_env(Ctx, apply_subst_to_env(Subst, GuardsGammaI)),
-                                        simp_constrs_if_ok2(simp_constrs(NewGuardsCtx, GuardCsI),
-                                            fun(GuardDs) ->
-                                                MatchTy = subst:apply(Subst, TI),
-                                                IsBottom = subty:is_subty(Ctx#ctx.symtab,
-                                                                            MatchTy,
-                                                                            {predef, none}),
-                                                case {IsBottom, Ctx#ctx.unmatched_branch} of
-                                                    {true, ignore_branch} ->
-                                                        ?LOG_DEBUG("Ignoring branch at ~s, match type ~s (unsubstituted: ~s) equivalent to none()",
-                                                                    ast:format_loc(loc(BodyLocs)),
-                                                                    pretty:render_ty(MatchTy),
-                                                                    pretty:render_ty(TI)
-                                                                    ),
-                                                        cross_union(BeforeDss, singleds(GuardDs));
-                                                    {true, report} ->
-                                                        {simp_constrs_error, {redundant_branch, loc(BodyLocs)}};
-                                                    _ ->
-                                                        case Ctx#ctx.unmatched_branch of
-                                                            ignore_branch ->
-                                                                ?LOG_DEBUG("Not ignoring branch at ~s, match type ~s (unsubstituted: ~s) greater than none()",
-                                                                        ast:format_loc(loc(BodyLocs)),
-                                                                        pretty:render_ty(MatchTy),
-                                                                        pretty:render_ty(TI)
-                                                                        );
-                                                            _ -> ok
-                                                        end,
-                                                        NewBodyCtx =
-                                                            inter_env(Ctx,
-                                                                    apply_subst_to_env(Subst, BodyGammaI)),
-                                                        BodyDss = simp_constrs(NewBodyCtx, BodyCsI),
-                                                        cross_union(cross_union(BeforeDss, singleds(GuardDs)), BodyDss)
-                                                end
-                                            end)
-                                end,
-                                {simp_constrs_ok, [EquivDs]}, Bodies
-                            )
-                    end,
-                    Substs
-                ),
-                % ?LOG_INFO("MultiResults: ~p", MultiResults),
-                case lists:filtermap(
-                    fun({simp_constrs_ok, X}) -> {true, X};
-                        (_) -> false
-                    end,
-                    MultiResults
-                    )
-                of
-                    % We have no successful results: either we only have errors or
-                    % no results at all
-                    [] ->
-                        case lists:search(fun is_simp_constrs_error/1, MultiResults) of
-                            false ->
-                                % MultiResults is empty, there is no substitution,
-                                % so the tally invocation for typing the scrutiny above failed.
-                                % Hence, we return an error
-                                ?LOG_DEBUG("MultiResults is empty, checking whether typing the scrutiny or the exhaustiveness check fails."),
-                                case
-                                    get_substs(tally:tally(Ctx#ctx.symtab, DsScrut), Locs)
-                                of
-                                    [] ->
-                                        ?LOG_DEBUG("Typing the scrutiny failed"),
-                                        LocScrut = loc(locs_from_constrs(CsScrut), loc(Locs)),
-                                        {simp_constrs_error, {tyerror, LocScrut}};
-                                    _ ->
-                                        ?LOG_DEBUG("Typing the scrutiny succeed, so it's a non-exhaustive case"),
-                                        {simp_constrs_error, {non_exhaustive_case, loc(Locs)}}
-                                end;
-                            {value, Err} ->
-                                % there are nested errors, return the first
-                                Err
-                        end;
-                    LL ->
-                        % ?LOG_INFO("Got: ~p", lists:flatten(LL)),
-                        % LL has type nonempty_list(nonempty_list(constr:simp_constrs())).
-                        % It contains the successful results.
-                        {simp_constrs_ok, lists:flatten(LL)}
-                end
+                ?LOG_INFO("Checking all branches with tally"),
+                list_ds(Bodies, Ctx, [], 
+                    fun(AllBodiesWithDis) ->
+                        % now we have all D_i
+                        % get all tally theta_j (with equiv sets)
+                        list_tally(lists:reverse(AllBodiesWithDis), Locs, DsScrut, Ctx, [], 
+                        fun(EquivDiDiList) -> 
+                            % now we have all theta_j and equiv(theta_j)
+                            lists:foldl( fun
+                                ({empty}, AccDs) -> 
+                                    % skip this branch
+                                    AccDs; 
+                                ({EquivDsi, GuardDsi, BodyDsi}, AccDs) -> 
+                                    % use this branch
+                                    % TODO BodyDsi not in rule?
+                                    cross_union(singleds(sets:union(EquivDsi, sets:union(GuardDsi, BodyDsi))), AccDs)
+                            end, zero_simp_constrs_result(), EquivDiDiList)
+                        end)
+                    end
+                )
             end);
-
         {cunsatisfiable, Locs, Msg} -> [single({cunsatisfiable, Locs, Msg})];
         X -> errors:uncovered_case(?FILE, ?LINE, X)
     end.
@@ -351,6 +323,27 @@ get_substs(Substs, Locs) ->
               end,
               L
              )
+    end.
+
+get_subst(Subst, Locs) ->
+    case Subst of
+        {error, _} ->
+            % We cannot throw an error here because other branches might return a solvable constraint
+            % set.
+            [];
+        _L ->
+            Alphas = subst:domain(Subst),
+            EquivCs =
+                lists:foldl(
+                fun(Alpha, Acc) ->
+                        T = subst:apply(Subst, {var, Alpha}),
+                        sets:add_element(
+                            {csubty, Locs, T, {var, Alpha}},
+                            sets:add_element({csubty, Locs, {var, Alpha}, T}, Acc))
+                end,
+                sets:new(),
+                Alphas),
+            {Subst, EquivCs}
     end.
 
 -spec extend_env(ctx(), constr:constr_env()) -> ctx().

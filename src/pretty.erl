@@ -67,7 +67,8 @@ sep_by(Sep, Docs) ->
           fun(D, Acc) ->
                   case Acc of
                       [] -> [D]; % last without trailing sep
-                      _ -> [beside(D, Sep) | Acc]
+                      _ -> 
+                        [beside(D, Sep) | Acc]
                   end
           end,
           [],

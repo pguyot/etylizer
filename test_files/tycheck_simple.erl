@@ -164,6 +164,39 @@ op_08() -> [1,2] ++ ["foo", "bar"].
 op_09() -> [] ++ [].
 
 % Case
+-spec case_010(spam) -> foobar.
+case_010(X) ->
+    case X of
+        spam -> foobar
+    end.
+
+-spec case_010_fail(spam) -> foobar.
+case_010_fail(X) ->
+    case X of
+        spam -> fail
+    end.
+
+-spec case_011(atom()) -> foobar.
+case_011(X) ->
+    case X of
+        spam -> foobar;
+        _ -> foobar
+    end.
+
+-spec case_011_fail(atom()) -> foobar.
+case_011_fail(X) ->
+    case X of
+        spam -> foobar2;
+        _ -> foobar
+    end.
+
+-spec case_3(a) -> 1; (b) -> 2.
+case_3(X) -> 
+  case X of
+    a -> 1;
+    b -> 2
+  end.
+
 -spec case_01(atom()) -> foobar.
 case_01(X) ->
     case X of
@@ -527,9 +560,13 @@ foo(L) ->
         [_X|XS] -> XS
     end.
 
--spec foo2(a) -> 1; (b) -> 2.
-foo2(a) -> 1;
-foo2(b) -> 2.
+%      a <: $0
+%           $0 <: a|b
+% $0 & b <: $0           DO BRANCH
+% case $0 of
+%   a -> 1;
+%   b -> 2
+% end
 
 -spec foo3(a|b) -> 1|true.
 foo3(a) -> 1;
@@ -549,3 +586,4 @@ fun_local_02_plus() ->
 
 -spec my_plus({integer(), integer()}) -> integer(); ({float(), integer()}) -> float(); ({integer(), float()}) -> float(); ({float(), float()}) -> float().
 my_plus({A, B}) -> A + B.
+

@@ -704,3 +704,20 @@ simplification_10_test() ->
  true = is_equiv(S, T),
 
  ok.
+
+bug_1_test() ->
+ S =
+   tunion([
+     tintersect([tvar(mu6), tnegate(tvar(mu5)), (tatom(bool))]),
+     tintersect([tnegate(tvar(mu5)), (tatom(bool))]),
+     tintersect([tnegate(tvar(mu6)), (tatom(bool))]),
+     tintersect([tvar(mu5), tnegate(tvar(mu6)), (tatom(bool))])
+   ]),
+ T =
+   tunion([
+     tintersect([tnegate(tvar(mu5)), (tatom(bool))]),
+     tintersect([tnegate(tvar(mu6)), (tatom(bool))])
+   ]),
+ true = is_equiv(S, T),
+
+ ok.
