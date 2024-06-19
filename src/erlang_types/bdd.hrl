@@ -126,6 +126,7 @@ intersect(A, B) ->
       end
   end.
 
+negate(Bdd, _M) -> negate(Bdd).
 negate({terminal, A}) ->
   s({terminal, ?TERMINAL:negate(A)});
 negate({node, E, B1, B2}) -> s({node, E, s(negate(B1)), s(negate(B2))}).

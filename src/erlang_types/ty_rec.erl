@@ -66,9 +66,10 @@
   % the reference of this type
   id :: integer() | open, 
 
-  % type variables are encoded in each part of the DNF separately
-  % user defined types are transformed to a new type reference with 
-  % the original user-defined name
+  % * type variables are encoded in each part of the DNF separately
+  % * user defined types are transformed to a new type reference with 
+  %   the original user-defined name
+  % * Erlang records are tagged tuples
 
   % pid(), port(), reference(), [], float()
   predef, 
@@ -475,19 +476,6 @@ negate(Type) ->
   % added to the implicit state
   % TODO add op cache
   corec_ref([Type], #{}, fun negate_corec/2).
-
-
-  %     #ty{predef = P1, atom = A1, interval = I1, list = L1, tuple = {DT, T}, function = {DF, F}} = type:load(TyRef1),
-  %     type:store(#ty{
-  %       predef = dnf_var_predef:negate(P1),
-  %       atom = dnf_var_ty_atom:negate(A1),
-  %       interval = dnf_var_int:negate(I1),
-  %       list = dnf_var_ty_list:negate(L1),
-  %       tuple = {dnf_var_ty_tuple:negate(DT), maps:map(fun(_K,V) -> dnf_var_ty_tuple:negate(V) end, T)},
-  %       function = {dnf_var_ty_function:negate(DF), maps:map(fun(_K,V) -> dnf_var_ty_function:negate(V) end, F)}
-
-
-
 
 
 
@@ -1036,22 +1024,25 @@ new_id() ->
   Id.
 
 
-
-
 % This definition is used to continue a (nested) corecursive negation
 -spec negate_corec(type(), memo()) -> type(); (ty(), memo()) -> ty().
 negate_corec(Ty = {ty_ref, _}, Memo) -> corec_ref(Ty, Memo, fun negate_corec/2);
-% Negation delegates the operation onto its components.
-% Since the components are made of a DNF structure, 
-% we use a generic dnf traversal for flags and products
-negate_corec(Ty, M) ->
-  error({todo, Ty, M}).
-% ty{flag = F, product = Prod}, M) -> 
-  % io:format(user,"Negating: ~p~n~p~n", [F, M]),
-%  FlagDnf = negate_flag_dnf(F, M),
-%  ProductDnf = negate_product_dnf(Prod, M),
-%  {#ty{flag = FlagDnf, product = ProductDnf}, S}.
-
+% negation delegates the operation to its components.
+% components that could be co-inductive are supplied with the current memoization set
+negate_corec(#ty{predef = P,atom = A,interval = I,list = L,tuple = {DT, T},function = {DF, F},dynamic = D,bitstring = B,map = Map}, M) ->
+  #ty{
+        predef = dnf_var_predef:negate(P),
+        atom = dnf_var_ty_atom:negate(A),
+        interval = dnf_var_int:negate(I),
+        list = dnf_var_ty_list:negate(L, M),
+        tuple = {dnf_var_ty_tuple:negate(DT, M), maps:map(fun(_K,V) -> dnf_var_ty_tuple:negate(V, M) end, T)},
+        function = {dnf_var_ty_function:negate(DF, M), maps:map(fun(_K,V) -> dnf_var_ty_function:negate(V, M) end, F)},
+        % TODO implement
+        % TODO doc and tag issues
+        dynamic = bdd_bool:negate(D),
+        bitstring = bdd_bool:negate(B), %TODO do bitstrings need memo?
+        map = bdd_bool:negate(Map) % should be supplied with the memo set
+    }.
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
