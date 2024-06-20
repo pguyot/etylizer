@@ -5,7 +5,7 @@
 -define(F(Z), fun() -> Z end).
 
 
--export([is_empty/1]).
+-export([is_empty/2]).
 -export([normalize/4, substitute/4]).
 -export([var/1, function/1, all_variables/1, mall_variables/1, transform/2]).
 
@@ -21,7 +21,9 @@ mall_variables({Default, Others}) when is_map(Others) ->
   ));
 mall_variables(Ty) -> all_variables(Ty).
 
-is_empty(TyBDD) -> dnf(TyBDD, {fun is_empty_coclause/3, fun is_empty_union/2}).
+is_empty(TyBDD, Memo) -> 
+  error(todo_memo_functions),
+  dnf(TyBDD, {fun is_empty_coclause/3, fun is_empty_union/2}).
 is_empty_coclause(_Pos, _Neg, T) -> dnf_ty_function:is_empty(T).
 
 normalize(Size, Ty, Fixed, M) -> dnf(Ty, {

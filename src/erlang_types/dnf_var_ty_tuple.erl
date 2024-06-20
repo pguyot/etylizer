@@ -5,7 +5,7 @@
 -define(F(Z), fun() -> Z end).
 
 -export([normalize/4, substitute/4]).
--export([var/1, tuple/1, all_variables/1, mall_variables/1, transform/2, is_empty/1, apply_to_node/3]).
+-export([var/1, tuple/1, all_variables/1, mall_variables/1, transform/2, is_empty/2, apply_to_node/3]).
 
 % implementations provided by bdd_var.hrl
 -include("bdd_var.hrl").
@@ -13,7 +13,9 @@
 tuple(Tuple) -> terminal(Tuple).
 var(Var) -> node(Var).
 
-is_empty(TyBDD) -> dnf(TyBDD, {fun is_empty_coclause/3, fun is_empty_union/2}).
+is_empty(TyBDD, Memo) -> 
+  error(todo_tuple_emptyness),
+  dnf(TyBDD, {fun is_empty_coclause/3, fun is_empty_union/2}).
 is_empty_coclause(_Pos, _Neg, T) -> dnf_ty_tuple:is_empty(T).
 
 mall_variables({Default, Others}) when is_map(Others) ->

@@ -118,14 +118,18 @@
 % constructors for any and empty types
 -export([empty/0, any/0]).
 
+% structural check if a type is equivalent to Any; heuristic
+-export([is_any/1]).
+
 % set-theoretic operators on types
 -export([negate/1, union/2, intersect/2, difference/2]).
 
+% semantic evaluations on types
+-export([is_empty/1]).
 
 
 
--export([is_any/1]).
--export([is_empty/1, extract_variables/1]).
+-export([extract_variables/1]).
 
 % additional type constructors
 -export([predef/0, predef/1, variable/1, atom/1, interval/1, tuple/2]).
@@ -490,6 +494,18 @@ union(A, B) ->
   negate(intersect(negate(A), negate(B))).
 
 
+% TODO caching
+-spec is_empty(type()) -> boolean().
+is_empty(Ty) -> 
+  % emptyness assumes an already visited type is empty 
+  corec_const([Ty], #{}, fun is_empty_corec/2, true).
+
+% TODO in CDuce, is_any checks are used to keep the leafs of BDDs uniform; do we need this?
+-spec is_any(type()) -> boolean().
+is_any(Type) -> case any() of Type -> true; _ -> false end.
+
+
+
 
 -spec variable(ty_variable()) -> type().
 variable(Var) ->
@@ -584,46 +600,17 @@ multi_intersect_fun({DefaultF1, F1}, {DefaultF2, F2}, M) ->
   {dnf_var_ty_function:intersect(DefaultF1, DefaultF2, M), maps:from_list([{Key, IntersectKey(Key)} || Key <- AllKeys])}.
 
 
-is_empty(TyRef) ->
-  % first try op-cache
-  case type:is_empty_cached(TyRef) of
-    R when R == true; R == false -> R;
-    miss ->
-      type:store_is_empty_cached(TyRef, is_empty_miss(TyRef))
-  end.
 
-is_empty_miss(TyRef) ->
-  Ty = type:load(TyRef),
-  dnf_var_predef:is_empty(Ty#ty.predef)
-  andalso dnf_var_ty_atom:is_empty(Ty#ty.atom)
-    andalso dnf_var_int:is_empty(Ty#ty.interval)
-    andalso (
-      begin
-        case type:is_empty_memoized(TyRef) of
-          true ->
-            true;
-          miss ->
-            % memoize
-            ok = type:memoize(TyRef),
-            dnf_var_ty_list:is_empty(Ty#ty.list)
-            andalso multi_empty_tuples(Ty#ty.tuple)
-              andalso multi_empty_functions(Ty#ty.function)
-        end
-      end
-  ).
-
-multi_empty_tuples({Default, AllTuples}) ->
-  dnf_var_ty_tuple:is_empty(Default)
+multi_empty_tuples({Default, AllTuples}, M) ->
+  dnf_var_ty_tuple:is_empty(Default, M)
     andalso
-  maps:fold(fun(_Size, V, Acc) -> Acc andalso dnf_var_ty_tuple:is_empty(V) end, true, AllTuples).
+  maps:fold(fun(_Size, V, Acc) -> Acc andalso dnf_var_ty_tuple:is_empty(V, M) end, true, AllTuples).
 
-multi_empty_functions({Default, AllFunctions}) ->
-  dnf_var_ty_function:is_empty(Default)
+multi_empty_functions({Default, AllFunctions}, M) ->
+  dnf_var_ty_function:is_empty(Default, M)
     andalso
-    maps:fold(fun(_Size, V, Acc) -> Acc andalso dnf_var_ty_function:is_empty(V) end, true, AllFunctions).
+    maps:fold(fun(_Size, V, Acc) -> Acc andalso dnf_var_ty_function:is_empty(V, M) end, true, AllFunctions).
 
-is_any(_Arg0) ->
-  erlang:error(any_not_implemented). % TODO needed?
 
 normalize(TyRef, Fixed, M) ->
   case type:normalized_memoized({TyRef, Fixed}) of
@@ -1046,6 +1033,20 @@ intersect_corec([
     bitstring = bdd_bool:intersect(B1, B2), %TODO do bitstrings need memo?
     map = bdd_bool:intersect(Map1, Map2) % should be supplied with the memo set
   }).
+
+-spec is_empty_corec([type()], memo()) -> boolean(); (type(), memo()) -> boolean().
+is_empty_corec([Ty = {ty_ref, _}], Memo) -> corec_const(Ty, Memo, fun is_empty_corec/2, true);
+is_empty_corec([#ty{predef = P,atom = A,interval = I,list = L,tuple = T,function = F,dynamic = D,bitstring = B,map = Map}], Memo) ->
+  dnf_var_predef:is_empty(P)
+    andalso dnf_var_ty_atom:is_empty(A)
+    andalso dnf_var_int:is_empty(I)
+    % TODO impl
+    andalso bdd_bool:is_empty(D)
+    andalso bdd_bool:is_empty(B)
+    andalso bdd_bool:is_empty(Map)
+    andalso dnf_var_ty_list:is_empty(L, Memo)
+    andalso multi_empty_tuples(T, Memo)
+    andalso multi_empty_functions(F, Memo).
 
 
 -ifdef(TEST).
