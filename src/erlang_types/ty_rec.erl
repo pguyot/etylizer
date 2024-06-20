@@ -125,7 +125,7 @@
 -export([negate/1, union/2, intersect/2, difference/2]).
 
 % semantic evaluations on types
--export([is_empty/1]).
+-export([is_empty/1, is_subtype/2, is_equivalent/2]).
 
 
 
@@ -138,7 +138,7 @@
 % top type constructors
 -export([list/0, function/0, atom/0, interval/0, tuple/0, ty_of/6]).
 
--export([is_equivalent/2, is_subtype/2, normalize/3]).
+-export([normalize/3]).
 
 -export([substitute/2, substitute/3, pi/2, all_variables/1]).
 
@@ -160,12 +160,6 @@ print(Ref) -> pretty:render_ty(ast_lib:erlang_ty_to_ast(Ref)) .
 ty_of(Predef, Atom, Int, List, Tuple, Function) ->
   #ty{predef = Predef, atom = Atom, interval = Int, list = List, tuple = Tuple, function = Function}.
 
-is_subtype(TyRef1, TyRef2) ->
-  NewTy = intersect(TyRef1, ty_rec:negate(TyRef2)),
-  is_empty(NewTy).
-
-is_equivalent(TyRef1, TyRef2) ->
-  is_subtype(TyRef1, TyRef2) andalso is_subtype(TyRef2, TyRef1).
 
 maybe_intersect(Z2, Other, Intersect) ->
   case subty:is_subty(symtab:empty(), Z2, Other) of %TODO symtab?
@@ -503,6 +497,14 @@ is_empty(Ty) ->
 % TODO in CDuce, is_any checks are used to keep the leafs of BDDs uniform; do we need this?
 -spec is_any(type()) -> boolean().
 is_any(Type) -> case any() of Type -> true; _ -> false end.
+
+-spec is_subtype(type(), type()) -> boolean().
+is_subtype(Type1, Type2) ->
+  is_empty(intersect(Type1, negate(Type2))).
+
+-spec is_equivalent(type(), type()) -> boolean().
+is_equivalent(Type1, Type2) ->
+  is_subtype(Type1, Type2) andalso is_subtype(Type2, Type1).
 
 
 
