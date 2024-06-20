@@ -474,8 +474,20 @@ negate(Type) ->
   % initializes a corecursive negate operation with a new memoization set on the given type
   % returns a possibly new type with the result and all intermediate created types 
   % added to the implicit state
-  % TODO add op cache
   corec_ref([Type], #{}, fun negate_corec/2).
+
+-spec intersect(type(), type()) -> type().
+intersect(Type1, Type2) ->
+  corec_ref([Type1, Type2], #{}, fun intersect_corec/2).
+
+% TODO measure if caching difference and union increases performance (even though intersect and negate is cached already)
+-spec difference(type(), type()) -> type().
+difference(A, B) ->
+  intersect(A, negate(B)).
+
+-spec union(type(), type()) -> type().
+union(A, B) ->
+  negate(intersect(negate(A), negate(B))).
 
 
 
@@ -544,63 +556,32 @@ function() ->
   Empty = type:load(empty()),
   type:store(Empty#ty{ function = {dnf_var_ty_function:any(), #{}} }).
 
-% ======
-% Boolean operations
-% ======
-
--spec intersect(type(), type()) -> type().
-intersect(TyRef1, TyRef2) ->
-  type:op_cache(intersect, {TyRef1, TyRef2},
-    fun() ->
-      #ty{predef = P1, atom = A1, interval = I1, list = L1, tuple = T1, function = F1} = type:load(TyRef1),
-      #ty{predef = P2, atom = A2, interval = I2, list = L2, tuple = T2, function = F2} = type:load(TyRef2),
-      type:store(#ty{
-        predef = dnf_var_predef:intersect(P1, P2),
-        atom = dnf_var_ty_atom:intersect(A1, A2),
-        interval = dnf_var_int:intersect(I1, I2),
-        list = dnf_var_ty_list:intersect(L1, L2),
-        tuple = multi_intersect(T1, T2),
-        function = multi_intersect_fun(F1, F2)
-      })
-    end
-    ).
 
 
--spec difference(type(), type()) -> type().
-difference(A, B) ->
-  type:op_cache(diff, {A, B},
-    fun() ->
-      intersect(A, negate(B))
-    end).
 
--spec union(type(), type()) -> type().
-union(A, B) ->
-  type:op_cache(union, {A, B},
-    fun() ->
-  negate(intersect(negate(A), negate(B)))
-     end).
-
-multi_intersect({DefaultT1, T1}, {DefaultT2, T2}) ->
+multi_intersect({DefaultT1, T1}, {DefaultT2, T2}, M) ->
   % get all keys
   AllKeys = maps:keys(T1) ++ maps:keys(T2),
   IntersectKey = fun(Key) ->
     dnf_var_ty_tuple:intersect(
       maps:get(Key, T1, DefaultT1),
-      maps:get(Key, T2, DefaultT2)
+      maps:get(Key, T2, DefaultT2),
+      M
     )
                  end,
-  {dnf_var_ty_tuple:intersect(DefaultT1, DefaultT2), maps:from_list([{Key, IntersectKey(Key)} || Key <- AllKeys])}.
+  {dnf_var_ty_tuple:intersect(DefaultT1, DefaultT2, M), maps:from_list([{Key, IntersectKey(Key)} || Key <- AllKeys])}.
 
-multi_intersect_fun({DefaultF1, F1}, {DefaultF2, F2}) ->
+multi_intersect_fun({DefaultF1, F1}, {DefaultF2, F2}, M) ->
   % get all keys
   AllKeys = maps:keys(F1) ++ maps:keys(F2),
   IntersectKey = fun(Key) ->
     dnf_var_ty_function:intersect(
       maps:get(Key, F1, DefaultF1),
-      maps:get(Key, F2, DefaultF2)
+      maps:get(Key, F2, DefaultF2),
+      M
     )
                  end,
-  {dnf_var_ty_function:intersect(DefaultF1, DefaultF2), maps:from_list([{Key, IntersectKey(Key)} || Key <- AllKeys])}.
+  {dnf_var_ty_function:intersect(DefaultF1, DefaultF2, M), maps:from_list([{Key, IntersectKey(Key)} || Key <- AllKeys])}.
 
 
 is_empty(TyRef) ->
@@ -919,36 +900,35 @@ corec_const(Types, Memo, Continue, Const) -> corec(Types, Memo, Continue, {const
 % The operator provides two ways of specifying memoization: 
 % a constant term memoization (used for e.g. is_empty, Boolean return) 
 % and a new equation reference memoization (used for e.g. type operators)
-% TODO is it more efficient to get all elements from a map at once?
-% this means defining corec for 0,1, and 2 argument functions
-% measure runtime benefit, then maybe split
 -spec corec
 ([type()], memo(), fun(([ty()], memo()) -> ty()), reference) -> type();
 ([type()], memo(), fun(([ty()], memo()) -> ty()), {const, Const}) -> Const.
-corec(Type, Memo, Continue, RefOrConst) ->
+corec(Types, Memo, Continue, RefOrConst) ->
  #s{type_tbl = Tys} = state(),
  case Memo of
   % memoization of a type, terminate and return co-definition
-   #{Type := Codefinition} -> Codefinition;
+   #{Types := Codefinition} -> Codefinition;
    _ -> 
      UnfoldList = fun(L) -> 
+      % TODO is it more efficient to get all elements from a map at once?
+      % this means defining corec for 0,1, and 2 argument functions
+      % measure runtime benefit, then maybe split
       % given a list of types, fetch their type record from the given type_tbl
       [begin #{T := Ty} = Tys, Ty end || T <- L] 
       end,
+     UnfoldedTypes = UnfoldList(Types),
      case RefOrConst of 
        reference -> 
         NewId = new_id(),
-        NewMemo =  Memo#{Type => NewId},
-        Unfolded = UnfoldList(Type),
-
-        Ty = Continue(Unfolded, NewMemo),
+        NewMemo =  Memo#{Types => NewId},
+        Ty = Continue(UnfoldedTypes, NewMemo),
 
         % store new type record
         % store may return something other than the given NewId if sharing is employed
         store(NewId, Ty);
        % 'unfold' the input(s), memoize the constant term, and apply Continue
        {const, Const} -> 
-        Continue(UnfoldList(Type), Memo#{Type => Const})
+        Continue(UnfoldedTypes, Memo#{Types => Const})
      end
  end.
 
@@ -1026,10 +1006,10 @@ new_id() ->
 
 % This definition is used to continue a (nested) corecursive negation
 -spec negate_corec(type(), memo()) -> type(); (ty(), memo()) -> ty().
-negate_corec(Ty = {ty_ref, _}, Memo) -> corec_ref(Ty, Memo, fun negate_corec/2);
+negate_corec([Type = {ty_ref, _}], Memo) -> corec_ref(Type, Memo, fun negate_corec/2);
 % negation delegates the operation to its components.
 % components that could be co-inductive are supplied with the current memoization set
-negate_corec(#ty{predef = P,atom = A,interval = I,list = L,tuple = {DT, T},function = {DF, F},dynamic = D,bitstring = B,map = Map}, M) ->
+negate_corec([#ty{predef = P,atom = A,interval = I,list = L,tuple = {DT, T},function = {DF, F},dynamic = D,bitstring = B,map = Map}], M) ->
   #ty{
         predef = dnf_var_predef:negate(P),
         atom = dnf_var_ty_atom:negate(A),
@@ -1043,6 +1023,30 @@ negate_corec(#ty{predef = P,atom = A,interval = I,list = L,tuple = {DT, T},funct
         bitstring = bdd_bool:negate(B), %TODO do bitstrings need memo?
         map = bdd_bool:negate(Map) % should be supplied with the memo set
     }.
+
+% This definition is used to continue a (nested) corecursive intersection
+-spec intersect_corec(type(), memo()) -> type(); (ty(), memo()) -> ty().
+intersect_corec([Type1 = {ty_ref, _}, Type2], Memo) -> corec_ref([Type1, Type2], Memo, fun negate_corec/2);
+% negation delegates the operation to its components.
+% components that could be co-inductive are supplied with the current memoization set
+intersect_corec([
+  #ty{predef = P1,atom = A1,interval = I1,list = L1,tuple = T1,function = F1,dynamic = D1,bitstring = B1,map = Map1}, 
+  #ty{predef = P2,atom = A2,interval = I2,list = L2,tuple = T2,function = F2,dynamic = D2,bitstring = B2,map = Map2}
+], M) ->
+  type:store(#ty{
+    predef = dnf_var_predef:intersect(P1, P2),
+    atom = dnf_var_ty_atom:intersect(A1, A2),
+    interval = dnf_var_int:intersect(I1, I2),
+    list = dnf_var_ty_list:intersect(L1, L2, M),
+    tuple = multi_intersect(T1, T2, M),
+    function = multi_intersect_fun(F1, F2, M),
+    % TODO implement
+    % TODO doc and tag issues
+    dynamic = bdd_bool:intersect(D1, D2),
+    bitstring = bdd_bool:intersect(B1, B2), %TODO do bitstrings need memo?
+    map = bdd_bool:intersect(Map1, Map2) % should be supplied with the memo set
+  }).
+
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
