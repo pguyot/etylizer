@@ -21,17 +21,16 @@
 % equipped with a name. 
 % These names are used when user-defined types from
 % the Erlang AST are transformed to our internal representation.
--type type_name() :: {ty_ref, atom()}.
+-type type_name() :: term(). %TODO decide the structure of type names
 
+% TODO doc
+-type type_tbl() :: #{type() => ty()}.
+ 
 % We have at least four options for hash tables in Erlang that are efficient:
 % * ETS tables and its derivates
 % * (Big) maps (HAMT) with custom collision-handling
 % * custom hash table (Erlang)
 % * custom hash table (C Nif)
- 
-% TODO doc
--type type_tbl() :: #{type() => ty()}.
- 
 % Whereas implemeting a custom hash table in C would be the most efficient,
 % it's unfeasible and likely premature optimization.
 % A custom hash table in Erlang is much slower than the Erlang maps implementation which is implemented in C.
@@ -64,7 +63,7 @@
 % A type node consists of the type ID
 -record(ty, {
   % the reference of this type
-  id :: integer() | open, 
+  id = open :: integer() | open, 
 
   % * type variables are encoded in each part of the DNF separately
   % * user defined types are transformed to a new type reference with 
@@ -72,32 +71,32 @@
   % * Erlang records are tagged tuples
 
   % pid(), port(), reference(), [], float()
-  predef, 
+  predef :: dnf_var_predef:type(), 
   % singleton atoms; they have their own efficient representation
-  atom, 
+  atom :: dnf_var_ty_atom:type(), 
   % singleton integers, represented integer intervals with possible open ends (plus/minus infinity)
-  interval, 
+  interval :: dnf_var_int:type(), 
   % custom type for lists; Erlang lists are not encoded as a (co-)recursive type
-  list, 
+  list :: dnf_var_ty_list:type(),
   % n-ary tuples for n >= 0;  {}, {_}, ...
-  tuple, 
+  tuple :: dnf_var_ty_tuple:type(), 
   % n-ary functions for n >= 0; () -> T; (U) -> T; (U, V) -> T; ...
-  function,
+  function :: dnf_var_ty_function:type(),
 
   % ===
   % TODO these are not yet implemented and use a bdd_bool dummy implementation
    
   % dynamic(), ?-type; we could include it in predef, 
   % but dynamic has some special interactions with other parts of the solver (tally, subtyping)
-  dynamic,
+  dynamic :: bdd_bool:type(),
 
   % Erlang bitstrings
   % <<E1, E2, ... En>>
-  bitstring,
+  bitstring :: bdd_bool:type(),
 
   % unordered Erlang maps with optional and mandatory associations
   % #{t := t, t=> t}
-  map
+  map :: bdd_bool:type()
 }).
 -type ty() :: #ty{}.
 
@@ -127,12 +126,14 @@
 % semantic evaluations on types
 -export([is_empty/1, is_subtype/2, is_equivalent/2]).
 
+% constructors
+-export([predef/0, predef/1, variable/1, atom/1, interval/1, tuple/2]).
+
 
 
 -export([extract_variables/1]).
 
 % additional type constructors
--export([predef/0, predef/1, variable/1, atom/1, interval/1, tuple/2]).
 % type constructors with type refs
 -export([list/1, function/2]).
 % top type constructors
@@ -506,6 +507,14 @@ is_subtype(Type1, Type2) ->
 is_equivalent(Type1, Type2) ->
   is_subtype(Type1, Type2) andalso is_subtype(Type2, Type1).
 
+-spec predef(dnf_var_predef:type()) -> type().
+predef(Predef) ->
+  Empty = empty(),
+  error(todo_store).
+  % type:store(Empty#ty{ predef = Predef }).
+
+-spec predef() -> type().
+predef() -> predef(dnf_var_predef:any()).
 
 
 
@@ -543,10 +552,6 @@ interval(Interval) ->
 -spec interval() -> type().
 interval() -> interval(dnf_var_int:any()).
 
-predef(Predef) ->
-  Empty = type:load(empty()),
-  type:store(Empty#ty{ predef = Predef }).
-predef() -> predef(dnf_var_predef:any()).
 
 tuple({default, Sizes}, Tuple) ->
   NotCaptured = maps:from_list(lists:map(fun(Size) -> {Size, dnf_var_ty_tuple:empty()} end, Sizes)),
@@ -981,11 +986,38 @@ hash(#ty{id = Id}) ->
 
 -spec state() -> s().
 state() ->
-  error(todo_S).
+  State = get(state),
+  case State of
+    undefined -> empty_state();
+    _ -> State
+  end.
+
+-spec empty_state() -> s().
+empty_state() ->
+  Any = {ty_ref, 0},
+  % we define the corecursive type and close it at the same time.
+  AnyRec = #ty{
+    id = 0,
+    predef = ok,
+    atom = ok,
+    interval = ok,
+    list = ok,
+    tuple = ok,
+    function = ok,
+    dynamic = bdd_bool:any(),
+    bitstring = bdd_bool:any(),
+    map = bdd_bool:any()
+  },
+  #s{
+    id = 1, 
+    type_tbl = #{Any => AnyRec}, 
+    hash_tbl = #{ hash(AnyRec) => [Any] }
+  }.
 
 -spec update_state(s()) -> ok.
 update_state(S) ->
-  error(todo_update).
+  put(state, S),
+  ok.
 
 new_id() -> 
   (S = #s{id = Id}) = state(),
@@ -1053,6 +1085,11 @@ is_empty_corec([#ty{predef = P,atom = A,interval = I,list = L,tuple = T,function
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+predef_any_test() ->
+  T = ty_rec:empty(),
+  io:format(user,"~p~n", [T]),
+  ok.
 
 recursive_definition_test() ->
   test_utils:reset_ets(),

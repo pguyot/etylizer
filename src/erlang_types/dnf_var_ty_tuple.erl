@@ -7,6 +7,9 @@
 -export([normalize/4, substitute/4]).
 -export([var/1, tuple/1, all_variables/1, mall_variables/1, transform/2, is_empty/2, apply_to_node/3]).
 
+-export_type([type/0]).
+-type type() :: term(). %TODO
+
 % implementations provided by bdd_var.hrl
 -include("bdd_var.hrl").
 

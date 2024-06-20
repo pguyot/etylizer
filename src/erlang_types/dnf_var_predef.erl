@@ -7,7 +7,11 @@
 -export([is_empty/1, normalize/3, substitute/4]).
 -export([var/1, predef/1,  all_variables/1, transform/2]).
 
+-export_type([type/0]).
+-type type() :: term(). %TODO
+
 -include("bdd_var.hrl").
+
 
 % generic
 predef(Predef) -> terminal(Predef).

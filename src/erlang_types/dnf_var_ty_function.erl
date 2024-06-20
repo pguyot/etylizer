@@ -9,6 +9,9 @@
 -export([normalize/4, substitute/4]).
 -export([var/1, function/1, all_variables/1, mall_variables/1, transform/2]).
 
+-export_type([type/0]).
+-type type() :: term(). %TODO
+
 -include("bdd_var.hrl").
 
 function(Tuple) -> terminal(Tuple).

@@ -9,6 +9,9 @@
 -export([var/1, ty_atom/1, all_variables/1]).
 -export([transform/2]).
 
+-export_type([type/0]).
+-type type() :: term(). %TODO
+
 -include("bdd_var.hrl").
 
 ty_atom(Atom) -> terminal(Atom).
