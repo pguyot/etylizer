@@ -13,7 +13,7 @@
 % hide built-in Erlang node function
 -compile({no_auto_import, [node/1]}).
 
--export([has_ref/2, get_dnf/1, any/0, empty/0, equal/2, node/1, terminal/1, compare/2, union/2, intersect/2, negate/1, diff/2]).
+-export([has_ref/2, get_dnf/1, any/0, empty/0, equal/2, node/1, terminal/1, compare/2, union/2, intersect/2, negate/1, negate/2, diff/2]).
 
 % these are defined here so the IDE does not complain
 -ifndef(ELEMENT).
