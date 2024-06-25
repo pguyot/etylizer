@@ -99,7 +99,6 @@
 }).
 -type ty() :: #ty{}.
 
-
 % Type API
 % The type api for coinductive types has two types of methods
 %   1. Methods that start a co-recursive chain
@@ -111,7 +110,6 @@
 % another method (2.), a new chain must be started with its own memoization.
 % 
 % The state is always implicit and kept outside in a shared ETS table.
- 
 
 % constructors for any and empty types, semantic
 -export([empty/0, any/0]).
@@ -122,27 +120,33 @@
 % set-theoretic operators on types
 -export([negate/1, union/2, intersect/2, difference/2]).
 
-% semantic evaluations on types
+% semantic evaluations on types 
+% subtyping algorithm
 -export([is_empty/1, is_subtype/2, is_equivalent/2]).
-
-% constructors, syntactic
--export([predef/0, predef/1, variable/1, atom/1, interval/1, tuple/2]).
-
-
-
--export([extract_variables/1]).
-
-% additional type constructors
-% type constructors with type refs
--export([list/1, function/2]).
-% top type constructors
--export([list/0, function/0, atom/0, interval/0, tuple/0, ty_of/6]).
-
+% tallying (phase 1)
 -export([normalize/3]).
 
--export([substitute/2, substitute/3, pi/2, all_variables/1]).
+% constructors
+-export([predef/0, predef/1, variable/1, atom/1, interval/1, tuple/2, list/1, function/2, list/0, function/0, atom/0, interval/0, tuple/0]).
+% projection
+-export([pi/2]).
 
--export([transform/2, print/1]).
+% other co-recursive functions
+-export([
+  % collect all variables used in anywhere in the type
+  all_variables/1,
+  % given a type that consists of a union of (sub-)types, 
+  % extract out common variables that are contained in every part of the type
+  extract_variables/1,
+  % substitution for type variables
+  % given a map of variable -> type mappings,
+  % return a new type reference with the mappings replaced
+  substitute/2,
+  % type() -> string() conversion, no simplification
+  print/1,
+  % Generic walk over the type and apply operations
+  transform/2
+]).
 
 
 -type interval() :: term().
@@ -151,22 +155,276 @@
 -type ty_variable() :: term().
 -type ty_atom() :: term().
 
-
 % ======
-% top-level API
+% IMPLEMENTATION
 % ======
-print(Ref) -> pretty:render_ty(ast_lib:erlang_ty_to_ast(Ref)) .
+% 
+% The state is explicit and can be modified by any function
+% The state keeps track of:
+% * The next unused ID for a new type
+% * The type table, mapping type pointers to type records
+% * The hash table for type records to enable structure sharing
+% * The name table, mapping types to previously seen aliases
+-record(s, {id = 0, type_tbl = #{}, hash_tbl = #{}, name_tbl = #{}}).
+-type s() :: #s{}.
+ 
+% The top type is predefined, enforced to be shared and always mapped to reference 0.
+-spec any() -> type().
+any() -> {ty_ref, 0}.
 
-ty_of(Predef, Atom, Int, List, Tuple, Function) ->
-  #ty{predef = Predef, atom = Atom, interval = Int, list = List, tuple = Tuple, function = Function}.
+% The empty type is defined in terms of the any type and negation
+-spec empty() -> type().
+empty() ->
+  negate(any()).
 
+-spec negate(type()) -> type().
+negate(Type) ->
+  % initializes a corecursive negate operation with a new memoization set on the given type
+  % returns a possibly new type with the result and all intermediate created types 
+  % added to the implicit state
+  {Res, no_state} = corec_ref([Type], no_state, #{}, fun negate_corec/2),
+  Res.
 
-maybe_intersect(Z2, Other, Intersect) ->
-  case subty:is_subty(symtab:empty(), Z2, Other) of %TODO symtab?
-    true -> Z2;
-    false -> Intersect([Other, Z2])
+-spec intersect(type(), type()) -> type().
+intersect(Type1, Type2) ->
+  {Res, no_state} = corec_ref([Type1, Type2], no_state, #{}, fun intersect_corec/2),
+  Res.
+
+% TODO measure if caching difference and union increases performance (even though intersect and negate is cached already)
+-spec difference(type(), type()) -> type().
+difference(A, B) ->
+  intersect(A, negate(B)).
+
+-spec union(type(), type()) -> type().
+union(A, B) ->
+  negate(intersect(negate(A), negate(B))).
+
+% TODO caching
+-spec is_empty(type()) -> boolean().
+is_empty(Ty) -> 
+  % emptyness assumes an already visited type is empty 
+  {Res, no_state} = corec_const([Ty], no_state, #{}, fun is_empty_corec/2, true),
+  Res.
+
+% TODO in CDuce, is_any checks are used to keep the leafs of BDDs uniform; do we need this?
+-spec is_any(type()) -> boolean().
+is_any(Type) -> case any() of Type -> true; _ -> false end.
+
+-spec is_subtype(type(), type()) -> boolean().
+is_subtype(Type1, Type2) ->
+  is_empty(intersect(Type1, negate(Type2))).
+
+-spec is_equivalent(type(), type()) -> boolean().
+is_equivalent(Type1, Type2) ->
+  is_subtype(Type1, Type2) andalso is_subtype(Type2, Type1).
+
+% TODO type spec 
+% TODO corec
+-spec normalize(type(), term(), memo()) -> term().
+normalize(TyRef, Fixed, M) ->
+  case type:normalized_memoized({TyRef, Fixed}) of
+    miss ->
+      % TODO use corec machinery
+      type:memoize_norm({TyRef, Fixed}, Sol = normalize_miss(TyRef, Fixed, M)),
+      Sol;
+    R -> R
   end.
 
+-spec predef(dnf_var_predef:type()) -> type().
+predef(Predef) ->
+  store(#ty{predef = Predef}).
+
+-spec predef() -> type().
+predef() -> predef(dnf_var_predef:any()).
+
+-spec variable(ty_variable()) -> type().
+variable(Var) ->
+  Any = load(any()),
+  store(Any#ty{
+    id = open,
+    predef = dnf_var_predef:intersect(Any#ty.predef, dnf_var_predef:var(Var)),
+    atom = dnf_var_ty_atom:intersect(Any#ty.atom, dnf_var_ty_atom:var(Var)),
+    interval = dnf_var_int:intersect(Any#ty.interval, dnf_var_int:var(Var)),
+    list = dnf_var_ty_list:intersect(Any#ty.list, dnf_var_ty_list:var(Var)),
+    tuple = {dnf_var:var(Var), #{}},
+    function ={dnf_var:var(Var), #{}}
+  }).
+
+-spec atom(ty_atom()) -> type().
+atom(Atom) ->
+  store(#ty{atom = Atom}).
+
+-spec atom() -> type().
+atom() -> atom(dnf_var_ty_atom:any()).
+
+list() -> list(dnf_var_ty_list:any()).
+list(List) ->
+  store(#ty{list = List}).
+
+-spec interval(interval()) -> type().
+interval(Interval) ->
+  store(#ty{interval = Interval}).
+
+-spec interval() -> type().
+interval() -> interval(dnf_var_int:any()).
+
+% {default, [Int]}, tuple :: 
+%    Default for all tuple sizes except the ones specified with Sizes; those are initialized as empty
+% Int, tuple :: 
+%   Tuple constructor for that exact size
+-spec tuple({default, [integer()]}, dnf_var:type()) -> type();
+(integer(), dnf_var_ty_tuple:type()) -> type().
+tuple({default, Sizes}, DefaultVars) ->
+  NotCaptured = maps:from_list(lists:map(fun(Size) -> {Size, dnf_var_ty_tuple:empty()} end, Sizes)),
+  store(#ty{tuple = {DefaultVars, NotCaptured}});
+tuple(ComponentSize, Tuple) ->
+  store(#ty{tuple = {dnf_var:empty(), #{ComponentSize => Tuple}}}).
+
+-spec tuple() -> type().
+tuple() ->
+  store(#ty{tuple = {dnf_var:any(), #{}}}).
+
+-spec function({default, [integer()]}, dnf_var:type()) -> type();
+(integer(), dnf_var_ty_function:type()) -> type().
+function({default, Sizes}, DefaultVars) ->
+  NotCaptured = maps:from_list(lists:map(fun(Size) -> {Size, dnf_var_ty_function:empty()} end, Sizes)),
+  store(#ty{function = {DefaultVars, NotCaptured}});
+function(ComponentSize, Fun) ->
+  store(#ty{function = {dnf_var:empty(), #{ComponentSize => Fun}}}).
+
+-spec function() -> type().
+function() ->
+  store(#ty{function = {dnf_var:any(), #{}}}).
+
+-spec pi
+(predef, type()) -> dnf_var_predef:type();
+(atom, type()) -> dnf_var_ty_atom:type();
+(interval, type()) -> dnf_var_int:type();
+(list, type()) -> dnf_var_ty_list:type();
+(tuple, type()) -> {dnf_var:type(), #{integer() => dnf_var_ty_tuple:type()}};
+(function, type()) -> {dnf_var:type(), #{integer() => dnf_var_ty_function:type()}};
+({tuple, default}, type()) -> dnf_var:type();
+({tuple, integer()}, type()) -> dnf_var_ty_tuple:type();
+({function, default}, type()) -> dnf_var:type();
+({function, integer()}, type()) -> dnf_var_ty_function:type().
+pi(atom, TyRef) ->
+  Ty = type:load(TyRef),
+  Ty#ty.atom;
+pi(interval, TyRef) ->
+  Ty = type:load(TyRef),
+  Ty#ty.interval;
+pi(list, TyRef) ->
+  Ty = type:load(TyRef),
+  Ty#ty.list;
+pi(tuple, TyRef) ->
+  Ty = type:load(TyRef),
+  Ty#ty.tuple;
+pi({tuple, default}, TyRef) ->
+  Ty = type:load(TyRef),
+  {D, _TM} = Ty#ty.tuple,
+  D;
+pi({tuple, Len}, TyRef) ->
+  Ty = type:load(TyRef),
+  {D, TM} = Ty#ty.tuple,
+  maps:get(Len, TM, D);
+pi({function, default}, TyRef) ->
+  Ty = type:load(TyRef),
+  {D, _TM} = Ty#ty.function,
+  D;
+pi({function, Len}, TyRef) ->
+  Ty = type:load(TyRef),
+  {D, TM} = Ty#ty.function,
+  maps:get(Len, TM, D);
+pi(predef, TyRef) ->
+  Ty = type:load(TyRef),
+  Ty#ty.predef;
+pi(function, TyRef) ->
+  Ty = type:load(TyRef),
+  Ty#ty.function.
+
+% TODO this should be a co-recursive function
+-spec all_variables(type()) -> [ty_variable:type()].
+all_variables(TyRef) ->
+  #ty{
+    predef = Predefs,
+    atom = Atoms,
+    interval = Ints,
+    list = Lists,
+    tuple = Tuples,
+    function = Functions
+  } = type:load(TyRef),
+
+
+  lists:usort(
+    dnf_var_predef:all_variables(Predefs)
+  ++  dnf_var_ty_atom:all_variables(Atoms)
+  ++ dnf_var_int:all_variables(Ints)
+  ++ dnf_var_ty_list:all_variables(Lists)
+  ++ dnf_var_ty_tuple:mall_variables(Tuples)
+  ++ dnf_var_ty_function:mall_variables(Functions)).
+
+% TODO fix type API
+% TODO Doc
+% TODO proper corec
+-spec extract_variables(type()) -> {[ty_variable:type()], type()}.
+extract_variables(Ty = #ty{predef = P, atom = A, interval = I, list = L, tuple = T, function = F}) ->
+  % TODO this can be implemented more efficiently
+  % Current procedure:
+  %  1. Collect all variables in all parts
+  %  2. Check if a variable is contained in the union of parts
+  %  3. If so, that variable can be extracted and removed from the union of parts
+  %  4. Do so for all variables
+  PossibleVars = lists:foldl(fun(E, Acc) ->
+    sets:intersection(sets:from_list(E), Acc)
+              end, sets:from_list(dnf_var_predef:all_variables(P)),
+    [
+      dnf_var_ty_atom:all_variables(A),
+      dnf_var_int:all_variables(I),
+      dnf_var_ty_list:all_variables(L),
+      dnf_var_ty_tuple:mall_variables(T),
+      dnf_var_ty_function:mall_variables(F)
+      % TODO other parts
+    ]),
+
+
+  {Vars, NewTy} = lists:foldl(fun(Var, {ExtractedVars, TTy}) ->
+    case ty_rec:is_subtype(ty_rec:variable(Var), TTy) of
+      true ->
+        {[Var | ExtractedVars],
+        ty_rec:diff(TTy, ty_rec:variable(Var))};
+      false -> {ExtractedVars, TTy}
+    end
+                      end, {[], ty_ref:store(Ty)}, sets:to_list(PossibleVars)),
+
+  {Vars, NewTy}.
+
+% TODO type of map
+-spec substitute(type(), term()) -> type().
+substitute(TyRef, SubstituteMap) ->
+  % the left map is the current projection
+  % the right map is the original substitution map
+  ?TIME(substitute, substitute(TyRef, SubstituteMap, #{})).
+
+% converts a type to a string representation
+-spec print(type()) -> string().
+% print(Ref) -> pretty:render_ty(ast_lib:erlang_ty_to_ast(Ref)) .
+print(Type = {ty_ref, Id}) -> 
+  Str = pretty:format([], [Ty], #{}),
+  integer_to_list(Id) ++ " := " ++
+  corec_fun([Type], _Stack = [], #{}, fun print_corec/2, fun([{ty_ref, Id}]) -> integer_to_list(Id) end).
+  
+
+print_corec([Ty = {ty_ref, _}], Memo) -> 
+  "RESULT := " ++
+  corec_fun([Ty], Memo, fun print_corec/2, fun([{ty_ref, Id}]) -> integer_to_list(Id) end);
+print_corec([#ty{predef = P,atom = A,interval = I,list = L,tuple = T,function = F,dynamic = D,bitstring = B,map = Map}], Memo) ->
+  "ty{}".
+
+
+% TODO spec 
+% TODO doc 
+% TODO co-rec
+-spec transform(type(), #{}) -> term().
 transform(TyRef, Ops) ->
   % Do things twice, pos and neg
   Pos = transform_p(TyRef, Ops),
@@ -186,6 +444,261 @@ transform(TyRef, Ops) ->
         _ -> {neg, Neg}
       end
   end.
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+% ===
+% PRIVATE FUNCTIONS
+% ===
+
+% TODO doc memo set
+-type memo() :: #{}.
+ 
+% we define two corecursive helper methods: 
+% one that introduces new equations and one for constant term memoizations
+% state is implicit
+% TODO spec
+corec_ref(Types, State, Memo, Continue) -> corec(Types, State, Memo, Continue, reference).
+% TODO spec
+corec_const(Types, State, Memo, Continue, Const) -> corec(Types, State, Memo, Continue, {const, Const}).
+
+% A generic corecursion operator for type operators negation/union/intersection 
+% and other constant corecursive functions (is_empty)
+% We track the codefinition inside the memoization map
+% If a corecursive call is encountered, use the mapped codefinition in the map
+% The operator provides two ways of specifying memoization: 
+% a constant term memoization (used for e.g. is_empty, Boolean return) 
+% and a new equation reference memoization (used for e.g. type operators)
+-spec corec
+([type()], term(), memo(), fun(([ty()], term(), memo()) -> {ty(), term()}), reference) -> {type(), State};
+([type()], term(), memo(), fun(([ty()], term(), memo()) -> {ty()), term()}, {const, Const}) -> {Const, State}.
+corec(Types, State, Memo, Continue, Option) ->
+ #s{type_tbl = Tys} = state(),
+ case Memo of
+  % memoization of a type, terminate and return co-definition
+   #{Types := Codefinition} -> Codefinition;
+   _ -> 
+     UnfoldList = fun(L) -> 
+      % TODO is it more efficient to get all elements from a map at once?
+      % this means defining corec for 0,1, and 2 argument functions
+      % measure runtime benefit, then maybe split
+      % given a list of types, fetch their type record from the given type_tbl
+      [begin #{T := Ty} = Tys, Ty end || T <- L] 
+      end,
+     UnfoldedTypes = UnfoldList(Types),
+     case Option of 
+       reference -> 
+        NewId = new_id(),
+        NewMemo =  Memo#{Types => NewId},
+        {Ty, NewState} = Continue(UnfoldedTypes, State, NewMemo),
+
+        % store new type record
+        % store may return something other than the given NewId if sharing is employed
+        {store(NewId, Ty), NewState};
+       % 'unfold' the input(s), memoize the constant term, and apply Continue
+       {const, Const} -> 
+        Continue(UnfoldedTypes, State, Memo#{Types => Const})
+     end
+ end.
+
+load({ty_ref, Id}) ->
+  #s{type_tbl = #{Id := Ty}} = state(),
+  Ty.
+
+store(OldTy = #ty{id = open}) ->
+  NewId = new_id(),
+  store(NewId, OldTy).
+
+% preconditions: 
+% id = open
+store(NewId, OldTy = #ty{id = open}) ->
+  (S = #s{hash_tbl = Htbl, type_tbl = Tys}) = state(),
+  Ty = OldTy#ty{id = NewId},
+  H = hash(Ty),
+  case Htbl of
+    #{H := Refs} -> 
+      % a good hash function should produce a lot of share hits and close to no collisions
+      case 
+        % TODO horrible, refactor
+        [X || X <- Refs, 
+          begin 
+            % structural compare the parts of the type to store and possible stored references
+            % TODO explain why ID is not used in comparison and 
+            % why only non-recursive types can be shared with this method
+            #{X := XTy } = Tys, 
+            OldTy =:= XTy#ty{id = open}
+          end] 
+          of
+        [Ref] -> 
+          io:format(user, "Share hit for ~p!~n", [Ref]),
+          Ref;
+        _ -> 
+          NewTy = Ty#ty{id = NewId},
+          io:format(user, "Store ~p:= (collision)~n~p~n", [NewId, NewTy]),
+          % update hash table and type table with new entry
+          % the hash table is updated in the collision slot
+          NewState = S#s{
+            hash_tbl = Htbl#{H => Refs ++ [{ty_ref, NewId}]}, 
+            type_tbl = Tys#{{ty_ref, NewId} => NewTy}
+          },
+          ok = update_state(NewState),
+          {ty_ref, NewId}
+        end;
+    _ ->
+      NewTy = Ty#ty{id = NewId},
+      io:format(user, "Store ~p:~n~p~n", [NewId, NewTy]),
+      % update hash table and type table with new entry
+      NewState = S#s{
+        hash_tbl = Htbl#{H => [{ty_ref, NewId}]}, 
+        type_tbl = Tys#{{ty_ref, NewId} => NewTy}
+      },
+      ok = update_state(NewState),
+      {ty_ref, NewId}
+    end.
+
+% TODO hash functions
+% 1. erlang:phash2
+% 2. Cduce
+% 3. hashing modulo alpha-equivalence
+% Measure against test suite then replace hash function with better one
+hash(#ty{id = Id}) ->
+  % sanity check, only hash valid types
+  true = (Id /= open),
+  % bad hash function
+  17.
+
+-spec state() -> s().
+state() ->
+  State = get(state),
+  case State of
+    undefined -> empty_state();
+    _ -> State
+  end.
+
+-spec empty_state() -> s().
+empty_state() ->
+  % define the Any type to be globally known
+  Any = {ty_ref, 0},
+  % we define the corecursive type and close it at the same time.
+  % in other representations, 
+  % we would need to define the Empty type at the same time since they are mutually recurive
+  % Any = (Empty -> Any) U ...
+  % Empty = !Any
+  % here, since all functions are represented as a default bdd_bool value 1,
+  % we don't need an explicitly defined Empty type
+  AnyRec = #ty{
+    id = 0,
+    predef = dnf_var_predef:any(),
+    atom = dnf_var_ty_atom:any(),
+    interval = dnf_var_int:any(),
+    list = dnf_var_ty_list:any(),
+    tuple = {dnf_var:any(), #{}},
+    function = {dnf_var:any(), #{}},
+    dynamic = bdd_bool:any(),
+    bitstring = bdd_bool:any(),
+    map = bdd_bool:any()
+  },
+
+  
+  #s{
+    id = 1, 
+    type_tbl = #{Any => AnyRec}, 
+    hash_tbl = #{ hash(AnyRec) => [Any] }
+  }.
+
+-spec update_state(s()) -> ok.
+update_state(S) ->
+  put(state, S),
+  ok.
+
+new_id() -> 
+  (S = #s{id = Id}) = state(),
+  ok = update_state(S#s{id = Id + 1}),
+  Id.
+
+
+% This definition is used to continue a (nested) corecursive negation
+-spec negate_corec(type(), memo()) -> type(); (ty(), memo()) -> ty().
+negate_corec([Type = {ty_ref, _}], Memo) -> corec_ref(Type, Memo, fun negate_corec/2);
+% negation delegates the operation to its components.
+% components that could be co-inductive are supplied with the current memoization set
+negate_corec([#ty{predef = P,atom = A,interval = I,list = L,tuple = {DT, T},function = {DF, F},dynamic = D,bitstring = B,map = Map}], M) ->
+  #ty{
+        predef = dnf_var_predef:negate(P),
+        atom = dnf_var_ty_atom:negate(A),
+        interval = dnf_var_int:negate(I),
+        list = dnf_var_ty_list:negate(L, M),
+        tuple = {dnf_var:negate(DT, M), maps:map(fun(_K,V) -> dnf_var_ty_tuple:negate(V, M) end, T)},
+        function = {dnf_var:negate(DF, M), maps:map(fun(_K,V) -> dnf_var_ty_function:negate(V, M) end, F)},
+        % TODO implement
+        % TODO doc and tag issues
+        dynamic = bdd_bool:negate(D),
+        bitstring = bdd_bool:negate(B), %TODO do bitstrings need memo?
+        map = bdd_bool:negate(Map) % should be supplied with the memo set
+    }.
+
+% This definition is used to continue a (nested) corecursive intersection
+-spec intersect_corec(type(), memo()) -> type(); (ty(), memo()) -> ty().
+intersect_corec([Type1 = {ty_ref, _}, Type2], Memo) -> corec_ref([Type1, Type2], Memo, fun negate_corec/2);
+% negation delegates the operation to its components.
+% components that could be co-inductive are supplied with the current memoization set
+intersect_corec([
+  #ty{predef = P1,atom = A1,interval = I1,list = L1,tuple = T1,function = F1,dynamic = D1,bitstring = B1,map = Map1}, 
+  #ty{predef = P2,atom = A2,interval = I2,list = L2,tuple = T2,function = F2,dynamic = D2,bitstring = B2,map = Map2}
+], M) ->
+  type:store(#ty{
+    predef = dnf_var_predef:intersect(P1, P2),
+    atom = dnf_var_ty_atom:intersect(A1, A2),
+    interval = dnf_var_int:intersect(I1, I2),
+    list = dnf_var_ty_list:intersect(L1, L2, M),
+    tuple = multi_intersect(T1, T2, M),
+    function = multi_intersect_fun(F1, F2, M),
+    % TODO implement
+    % TODO doc and tag issues
+    dynamic = bdd_bool:intersect(D1, D2),
+    bitstring = bdd_bool:intersect(B1, B2), %TODO do bitstrings need memo?
+    map = bdd_bool:intersect(Map1, Map2) % should be supplied with the memo set
+  }).
+
+-spec is_empty_corec([type()], memo()) -> boolean(); (type(), memo()) -> boolean().
+is_empty_corec([Ty = {ty_ref, _}], Memo) -> corec_const(Ty, Memo, fun is_empty_corec/2, true);
+is_empty_corec([#ty{predef = P,atom = A,interval = I,list = L,tuple = T,function = F,dynamic = D,bitstring = B,map = Map}], Memo) ->
+  dnf_var_predef:is_empty(P)
+    andalso dnf_var_ty_atom:is_empty(A)
+    andalso dnf_var_int:is_empty(I)
+    % TODO impl
+    andalso bdd_bool:is_empty(D)
+    andalso bdd_bool:is_empty(B)
+    andalso bdd_bool:is_empty(Map)
+    andalso dnf_var_ty_list:is_empty(L, Memo)
+    andalso multi_empty_tuples(T, Memo)
+    andalso multi_empty_functions(F, Memo).
+
+
+% ========
+% TODO
+% ========
+
+maybe_intersect(Z2, Other, Intersect) ->
+  case subty:is_subty(symtab:empty(), Z2, Other) of %TODO symtab?
+    true -> Z2;
+    false -> Intersect([Other, Z2])
+  end.
+
 
 transform_p(TyRef, Ops =
   #{
@@ -417,162 +930,6 @@ multi_transform_fun(DefaultF, F, Ops = #{any_function_i := Function, any_functio
   DefaultFunctionsWithoutExplicitFunctions = Intersect([X1, Functions(), Negate(Union([Function(I) || I <- Sizes]))]),
   Union([DefaultFunctionsWithoutExplicitFunctions, Union(Xs)]).
 
-
-extract_variables(Ty = #ty{ predef = P, atom = A, interval = I, list = L, tuple = T, function = F }) ->
-  PossibleVars = lists:foldl(fun(E, Acc) ->
-    sets:intersection(sets:from_list(E), Acc)
-              end, sets:from_list(dnf_var_predef:all_variables(P)),
-    [
-      dnf_var_ty_atom:all_variables(A),
-      dnf_var_int:all_variables(I),
-      dnf_var_ty_list:all_variables(L),
-      dnf_var_ty_tuple:mall_variables(T),
-      dnf_var_ty_function:mall_variables(F)
-    ]),
-
-
-  {Vars, NewTy} = lists:foldl(fun(Var, {ExtractedVars, TTy}) ->
-    case ty_rec:is_subtype(ty_rec:variable(Var), TTy) of
-      true ->
-        {[Var | ExtractedVars],
-        ty_rec:diff(TTy, ty_rec:variable(Var))};
-      false -> {ExtractedVars, TTy}
-    end
-                      end, {[], ty_ref:store(Ty)}, sets:to_list(PossibleVars)),
-
-  {Vars, NewTy}.
-
-
-
-
-% ======
-% IMPLEMENTATION
-% ======
-% 
-% The state is explicit and can be modified by any function
-% The state keeps track of:
-% * The next unused ID for a new type
-% * The type table, mapping type pointers to type records
-% * The hash table for type records to enable structure sharing
-% * The name table, mapping types to previously seen aliases
--record(s, {id = 0, type_tbl = #{}, hash_tbl = #{}, name_tbl = #{}}).
--type s() :: #s{}.
- 
-% The top type is predefined, enforced to be shared and always mapped to reference 0.
--spec any() -> type().
-any() -> {ty_ref, 0}.
-
-% The empty type is defined in terms of the any type and negation
--spec empty() -> type().
-empty() ->
-  negate(any()).
-
--spec negate(type()) -> type().
-negate(Type) ->
-  % initializes a corecursive negate operation with a new memoization set on the given type
-  % returns a possibly new type with the result and all intermediate created types 
-  % added to the implicit state
-  corec_ref([Type], #{}, fun negate_corec/2).
-
--spec intersect(type(), type()) -> type().
-intersect(Type1, Type2) ->
-  corec_ref([Type1, Type2], #{}, fun intersect_corec/2).
-
-% TODO measure if caching difference and union increases performance (even though intersect and negate is cached already)
--spec difference(type(), type()) -> type().
-difference(A, B) ->
-  intersect(A, negate(B)).
-
--spec union(type(), type()) -> type().
-union(A, B) ->
-  negate(intersect(negate(A), negate(B))).
-
-
-% TODO caching
--spec is_empty(type()) -> boolean().
-is_empty(Ty) -> 
-  % emptyness assumes an already visited type is empty 
-  corec_const([Ty], #{}, fun is_empty_corec/2, true).
-
-% TODO in CDuce, is_any checks are used to keep the leafs of BDDs uniform; do we need this?
--spec is_any(type()) -> boolean().
-is_any(Type) -> case any() of Type -> true; _ -> false end.
-
--spec is_subtype(type(), type()) -> boolean().
-is_subtype(Type1, Type2) ->
-  is_empty(intersect(Type1, negate(Type2))).
-
--spec is_equivalent(type(), type()) -> boolean().
-is_equivalent(Type1, Type2) ->
-  is_subtype(Type1, Type2) andalso is_subtype(Type2, Type1).
-
--spec predef(dnf_var_predef:type()) -> type().
-predef(Predef) ->
-  store(#ty{predef = Predef}).
-
--spec predef() -> type().
-predef() -> predef(dnf_var_predef:any()).
-
--spec variable(ty_variable()) -> type().
-variable(Var) ->
-  Any = load(any()),
-  store(Any#ty{
-    id = open,
-    predef = dnf_var_predef:intersect(Any#ty.predef, dnf_var_predef:var(Var)),
-    atom = dnf_var_ty_atom:intersect(Any#ty.atom, dnf_var_ty_atom:var(Var)),
-    interval = dnf_var_int:intersect(Any#ty.interval, dnf_var_int:var(Var)),
-    list = dnf_var_ty_list:intersect(Any#ty.list, dnf_var_ty_list:var(Var)),
-    tuple = {dnf_var:var(Var), #{}},
-    function ={dnf_var:var(Var), #{}}
-  }).
-
--spec atom(ty_atom()) -> type().
-atom(Atom) ->
-  store(#ty{atom = Atom}).
-
--spec atom() -> type().
-atom() -> atom(dnf_var_ty_atom:any()).
-
-list() -> list(dnf_var_ty_list:any()).
-list(List) ->
-  store(#ty{list = List}).
-
--spec interval(interval()) -> type().
-interval(Interval) ->
-  store(#ty{interval = Interval}).
-
--spec interval() -> type().
-interval() -> interval(dnf_var_int:any()).
-
-% {default, [Int]}, tuple :: 
-%    Default for all tuple sizes except the ones specified with Sizes; those are initialized as empty
-% Int, tuple :: 
-%   Tuple constructor for that exact size
--spec tuple({default, [integer()]}, dnf_var:type()) -> type();
-(integer(), dnf_var_ty_tuple:type()) -> type().
-tuple({default, Sizes}, DefaultVars) ->
-  NotCaptured = maps:from_list(lists:map(fun(Size) -> {Size, dnf_var_ty_tuple:empty()} end, Sizes)),
-  store(#ty{tuple = {DefaultVars, NotCaptured}});
-tuple(ComponentSize, Tuple) ->
-  store(#ty{tuple = {dnf_var:empty(), #{ComponentSize => Tuple}}}).
-
--spec tuple() -> type().
-tuple() ->
-  store(#ty{tuple = {dnf_var:any(), #{}}}).
-
--spec function({default, [integer()]}, dnf_var:type()) -> type();
-(integer(), dnf_var_ty_function:type()) -> type().
-function({default, Sizes}, DefaultVars) ->
-  NotCaptured = maps:from_list(lists:map(fun(Size) -> {Size, dnf_var_ty_function:empty()} end, Sizes)),
-  store(#ty{function = {DefaultVars, NotCaptured}});
-function(ComponentSize, Fun) ->
-  store(#ty{function = {dnf_var:empty(), #{ComponentSize => Fun}}}).
-
--spec function() -> type().
-function() ->
-  store(#ty{function = {dnf_var:any(), #{}}}).
-
-
 multi_intersect({DefaultT1, T1}, {DefaultT2, T2}, M) ->
   % get all keys
   AllKeys = maps:keys(T1) ++ maps:keys(T2),
@@ -610,14 +967,6 @@ multi_empty_functions({Default, AllFunctions}, M) ->
     maps:fold(fun(_Size, V, Acc) -> Acc andalso dnf_var_ty_function:is_empty(V, M) end, true, AllFunctions).
 
 
-normalize(TyRef, Fixed, M) ->
-  case type:normalized_memoized({TyRef, Fixed}) of
-    miss ->
-      % TODO use corec machinery
-      type:memoize_norm({TyRef, Fixed}, Sol = normalize_miss(TyRef, Fixed, M)),
-      Sol;
-    R -> R
-  end.
 
 normalize_miss(TyRef, Fixed, M) ->
   % TODO bitstrings
@@ -685,10 +1034,6 @@ multi_normalize_functions({Default, AllFunctions}, Fixed, M) ->
     Others
   ).
 
-substitute(TyRef, SubstituteMap) ->
-  % the left map is the current projection
-  % the right map is the original substitution map
-  ?TIME(substitute, substitute(TyRef, SubstituteMap, #{})).
 
 % var => ty_rec
 % TODO corec substitute
@@ -795,287 +1140,8 @@ has_ref(#ty{list = Lists, tuple = {Default, AllTuple}, function = {DefaultF, All
   orelse
   maps:fold(fun(_K,F, All) -> All orelse dnf_var_ty_function:has_ref(F, TyRef) end, false, AllFunction).
 
-pi(atom, TyRef) ->
-  Ty = type:load(TyRef),
-  Ty#ty.atom;
-pi(interval, TyRef) ->
-  Ty = type:load(TyRef),
-  Ty#ty.interval;
-pi(list, TyRef) ->
-  Ty = type:load(TyRef),
-  Ty#ty.list;
-pi(tuple, TyRef) ->
-  Ty = type:load(TyRef),
-  Ty#ty.tuple;
-pi({tuple, default}, TyRef) ->
-  Ty = type:load(TyRef),
-  {D, _TM} = Ty#ty.tuple,
-  D;
-pi({tuple, Len}, TyRef) ->
-  Ty = type:load(TyRef),
-  {D, TM} = Ty#ty.tuple,
-  maps:get(Len, TM, D);
-pi({function, default}, TyRef) ->
-  Ty = type:load(TyRef),
-  {D, _TM} = Ty#ty.function,
-  D;
-pi({function, Len}, TyRef) ->
-  Ty = type:load(TyRef),
-  {D, TM} = Ty#ty.function,
-  maps:get(Len, TM, D);
-pi(predef, TyRef) ->
-  Ty = type:load(TyRef),
-  Ty#ty.predef;
-pi(function, TyRef) ->
-  Ty = type:load(TyRef),
-  Ty#ty.function.
-
-% TODO this should be a co-recursive function
-all_variables(TyRef) ->
-  #ty{
-    predef = Predefs,
-    atom = Atoms,
-    interval = Ints,
-    list = Lists,
-    tuple = Tuples,
-    function = Functions
-  } = type:load(TyRef),
 
 
-  lists:usort(
-    dnf_var_predef:all_variables(Predefs)
-  ++  dnf_var_ty_atom:all_variables(Atoms)
-  ++ dnf_var_int:all_variables(Ints)
-  ++ dnf_var_ty_list:all_variables(Lists)
-  ++ dnf_var_ty_tuple:mall_variables(Tuples)
-  ++ dnf_var_ty_function:mall_variables(Functions)).
-
-% ===
-% PRIVATE FUNCTIONS
-% ===
-
-% TODO doc memo set
--type memo() :: #{}.
- 
-% we define two corecursive helper methods: 
-% one that introduces new equations and one for constant term memoizations
-% state is implicit
-% TODO spec
-corec_ref(Types, Memo, Continue) -> corec(Types, Memo, Continue, reference).
-% TODO spec
-corec_const(Types, Memo, Continue, Const) -> corec(Types, Memo, Continue, {const, Const}).
-
-% A generic corecursion operator for type operators negation/union/intersection 
-% and other constant corecursive functions (is_empty)
-% We track the codefinition inside the memoization map
-% If a corecursive call is encountered, use the mapped codefinition in the map
-% The operator provides two ways of specifying memoization: 
-% a constant term memoization (used for e.g. is_empty, Boolean return) 
-% and a new equation reference memoization (used for e.g. type operators)
--spec corec
-([type()], memo(), fun(([ty()], memo()) -> ty()), reference) -> type();
-([type()], memo(), fun(([ty()], memo()) -> ty()), {const, Const}) -> Const.
-corec(Types, Memo, Continue, RefOrConst) ->
- #s{type_tbl = Tys} = state(),
- case Memo of
-  % memoization of a type, terminate and return co-definition
-   #{Types := Codefinition} -> Codefinition;
-   _ -> 
-     UnfoldList = fun(L) -> 
-      % TODO is it more efficient to get all elements from a map at once?
-      % this means defining corec for 0,1, and 2 argument functions
-      % measure runtime benefit, then maybe split
-      % given a list of types, fetch their type record from the given type_tbl
-      [begin #{T := Ty} = Tys, Ty end || T <- L] 
-      end,
-     UnfoldedTypes = UnfoldList(Types),
-     case RefOrConst of 
-       reference -> 
-        NewId = new_id(),
-        NewMemo =  Memo#{Types => NewId},
-        Ty = Continue(UnfoldedTypes, NewMemo),
-
-        % store new type record
-        % store may return something other than the given NewId if sharing is employed
-        store(NewId, Ty);
-       % 'unfold' the input(s), memoize the constant term, and apply Continue
-       {const, Const} -> 
-        Continue(UnfoldedTypes, Memo#{Types => Const})
-     end
- end.
-
-load({ty_ref, Id}) ->
-  #s{type_tbl = #{Id := Ty}} = state(),
-  Ty.
-
-store(OldTy = #ty{id = open}) ->
-  NewId = new_id(),
-  store(NewId, OldTy).
-
-% preconditions: 
-% id = open
-store(NewId, OldTy = #ty{id = open}) ->
-  (S = #s{hash_tbl = Htbl, type_tbl = Tys}) = state(),
-  Ty = OldTy#ty{id = NewId},
-  H = hash(Ty),
-  case Htbl of
-    #{H := Refs} -> 
-      % a good hash function should produce a lot of share hits and close to no collisions
-      case 
-        % TODO horrible, refactor
-        [X || X <- Refs, 
-          begin 
-            % structural compare the parts of the type to store and possible stored references
-            % TODO explain why ID is not used in comparison and 
-            % why only non-recursive types can be shared with this method
-            #{X := XTy } = Tys, 
-            OldTy =:= XTy#ty{id = open}
-          end] 
-          of
-        [Ref] -> 
-          io:format(user, "Share hit for ~p!~n", [Ref]),
-          Ref;
-        _ -> 
-          NewTy = Ty#ty{id = NewId},
-          io:format(user, "Store ~p:= (collision)~n~p~n", [NewId, NewTy]),
-          % update hash table and type table with new entry
-          % the hash table is updated in the collision slot
-          NewState = S#s{
-            hash_tbl = Htbl#{H => Refs ++ [{ty_ref, NewId}]}, 
-            type_tbl = Tys#{{ty_ref, NewId} => NewTy}
-          },
-          ok = update_state(NewState),
-          {ty_ref, NewId}
-        end;
-    _ ->
-      NewTy = Ty#ty{id = NewId},
-      io:format(user, "Store ~p:~n~p~n", [NewId, NewTy]),
-      % update hash table and type table with new entry
-      NewState = S#s{
-        hash_tbl = Htbl#{H => [{ty_ref, NewId}]}, 
-        type_tbl = Tys#{{ty_ref, NewId} => NewTy}
-      },
-      ok = update_state(NewState),
-      {ty_ref, NewId}
-    end.
-
-% TODO hash functions
-% 1. erlang:phash2
-% 2. Cduce
-% 3. hashing modulo alpha-equivalence
-% Measure against test suite then replace hash function with better one
-hash(#ty{id = Id}) ->
-  % sanity check, only hash valid types
-  true = (Id /= open),
-  % bad hash function
-  17.
-
--spec state() -> s().
-state() ->
-  State = get(state),
-  case State of
-    undefined -> empty_state();
-    _ -> State
-  end.
-
--spec empty_state() -> s().
-empty_state() ->
-  % define the Any type to be globally known
-  Any = {ty_ref, 0},
-  % we define the corecursive type and close it at the same time.
-  % in other representations, 
-  % we would need to define the Empty type at the same time since they are mutually recurive
-  % Any = (Empty -> Any) U ...
-  % Empty = !Any
-  % here, since all functions are represented as a default bdd_bool value 1,
-  % we don't need an explicitly defined Empty type
-  AnyRec = #ty{
-    id = 0,
-    predef = dnf_var_predef:any(),
-    atom = dnf_var_ty_atom:any(),
-    interval = dnf_var_int:any(),
-    list = dnf_var_ty_list:any(),
-    tuple = {dnf_var:any(), #{}},
-    function = {dnf_var:any(), #{}},
-    dynamic = bdd_bool:any(),
-    bitstring = bdd_bool:any(),
-    map = bdd_bool:any()
-  },
-
-  
-  #s{
-    id = 1, 
-    type_tbl = #{Any => AnyRec}, 
-    hash_tbl = #{ hash(AnyRec) => [Any] }
-  }.
-
--spec update_state(s()) -> ok.
-update_state(S) ->
-  put(state, S),
-  ok.
-
-new_id() -> 
-  (S = #s{id = Id}) = state(),
-  ok = update_state(S#s{id = Id + 1}),
-  Id.
-
-
-% This definition is used to continue a (nested) corecursive negation
--spec negate_corec(type(), memo()) -> type(); (ty(), memo()) -> ty().
-negate_corec([Type = {ty_ref, _}], Memo) -> corec_ref(Type, Memo, fun negate_corec/2);
-% negation delegates the operation to its components.
-% components that could be co-inductive are supplied with the current memoization set
-negate_corec([#ty{predef = P,atom = A,interval = I,list = L,tuple = {DT, T},function = {DF, F},dynamic = D,bitstring = B,map = Map}], M) ->
-  #ty{
-        predef = dnf_var_predef:negate(P),
-        atom = dnf_var_ty_atom:negate(A),
-        interval = dnf_var_int:negate(I),
-        list = dnf_var_ty_list:negate(L, M),
-        tuple = {dnf_var:negate(DT, M), maps:map(fun(_K,V) -> dnf_var_ty_tuple:negate(V, M) end, T)},
-        function = {dnf_var:negate(DF, M), maps:map(fun(_K,V) -> dnf_var_ty_function:negate(V, M) end, F)},
-        % TODO implement
-        % TODO doc and tag issues
-        dynamic = bdd_bool:negate(D),
-        bitstring = bdd_bool:negate(B), %TODO do bitstrings need memo?
-        map = bdd_bool:negate(Map) % should be supplied with the memo set
-    }.
-
-% This definition is used to continue a (nested) corecursive intersection
--spec intersect_corec(type(), memo()) -> type(); (ty(), memo()) -> ty().
-intersect_corec([Type1 = {ty_ref, _}, Type2], Memo) -> corec_ref([Type1, Type2], Memo, fun negate_corec/2);
-% negation delegates the operation to its components.
-% components that could be co-inductive are supplied with the current memoization set
-intersect_corec([
-  #ty{predef = P1,atom = A1,interval = I1,list = L1,tuple = T1,function = F1,dynamic = D1,bitstring = B1,map = Map1}, 
-  #ty{predef = P2,atom = A2,interval = I2,list = L2,tuple = T2,function = F2,dynamic = D2,bitstring = B2,map = Map2}
-], M) ->
-  type:store(#ty{
-    predef = dnf_var_predef:intersect(P1, P2),
-    atom = dnf_var_ty_atom:intersect(A1, A2),
-    interval = dnf_var_int:intersect(I1, I2),
-    list = dnf_var_ty_list:intersect(L1, L2, M),
-    tuple = multi_intersect(T1, T2, M),
-    function = multi_intersect_fun(F1, F2, M),
-    % TODO implement
-    % TODO doc and tag issues
-    dynamic = bdd_bool:intersect(D1, D2),
-    bitstring = bdd_bool:intersect(B1, B2), %TODO do bitstrings need memo?
-    map = bdd_bool:intersect(Map1, Map2) % should be supplied with the memo set
-  }).
-
--spec is_empty_corec([type()], memo()) -> boolean(); (type(), memo()) -> boolean().
-is_empty_corec([Ty = {ty_ref, _}], Memo) -> corec_const(Ty, Memo, fun is_empty_corec/2, true);
-is_empty_corec([#ty{predef = P,atom = A,interval = I,list = L,tuple = T,function = F,dynamic = D,bitstring = B,map = Map}], Memo) ->
-  dnf_var_predef:is_empty(P)
-    andalso dnf_var_ty_atom:is_empty(A)
-    andalso dnf_var_int:is_empty(I)
-    % TODO impl
-    andalso bdd_bool:is_empty(D)
-    andalso bdd_bool:is_empty(B)
-    andalso bdd_bool:is_empty(Map)
-    andalso dnf_var_ty_list:is_empty(L, Memo)
-    andalso multi_empty_tuples(T, Memo)
-    andalso multi_empty_functions(F, Memo).
 
 
 -ifdef(TEST).
@@ -1083,7 +1149,7 @@ is_empty_corec([#ty{predef = P,atom = A,interval = I,list = L,tuple = T,function
 
 predef_any_test() ->
   T = ty_rec:predef(),
-  io:format(user,"~p~n", [T]),
+  io:format(user,"~s~n", [print(T)]),
   ok.
 
 recursive_definition_test() ->
