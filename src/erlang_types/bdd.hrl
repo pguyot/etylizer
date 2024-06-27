@@ -187,7 +187,8 @@ has_ref(Ty, Ref) ->
     fun(F1, F2) -> F1() orelse F2() end
   }).
 
-all_variables(Ty) ->
+all_variables(Ty, M) ->
+  error(todo_use_memo_in_all_vars_bdd),
   dnf(Ty, {
     fun
       (P,N,T) ->

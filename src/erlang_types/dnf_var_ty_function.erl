@@ -7,7 +7,7 @@
 
 -export([is_empty/2]).
 -export([normalize/4, substitute/4]).
--export([var/1, function/1, all_variables/1, mall_variables/1, transform/2]).
+-export([var/1, function/1, all_variables/2, mall_variables/2, transform/2]).
 
 -export_type([type/0]).
 -type type() :: term(). %TODO
@@ -17,12 +17,12 @@
 function(Tuple) -> terminal(Tuple).
 var(Var) -> node(Var).
 
-mall_variables({Default, Others}) when is_map(Others) ->
+mall_variables({Default, Others}, Memo) when is_map(Others) ->
   lists:usort(lists:flatten(
-    all_variables(Default) ++
-    lists:map(fun({_K,V}) -> all_variables(V) end, maps:to_list(Others))
+    all_variables(Default, Memo) ++
+    lists:map(fun({_K,V}) -> all_variables(V, Memo) end, maps:to_list(Others))
   ));
-mall_variables(Ty) -> all_variables(Ty).
+mall_variables(Ty, Memo) -> all_variables(Ty, Memo).
 
 is_empty(TyBDD, Memo) -> 
   error(todo_memo_functions),

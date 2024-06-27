@@ -4,7 +4,7 @@
 -define(TERMINAL, dnf_ty_list).
 
 -export([is_empty/2,normalize/3, substitute/4]).
--export([var/1, list/1, all_variables/1, transform/2, apply_to_node/3]).
+-export([var/1, list/1, all_variables/2, transform/2, apply_to_node/3]).
 
 -export_type([type/0]).
 -type type() :: term(). %TODO

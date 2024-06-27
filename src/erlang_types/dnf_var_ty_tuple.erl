@@ -5,7 +5,7 @@
 -define(F(Z), fun() -> Z end).
 
 -export([normalize/4, substitute/4]).
--export([var/1, tuple/1, all_variables/1, mall_variables/1, transform/2, is_empty/2, apply_to_node/3]).
+-export([var/1, tuple/1, all_variables/2, mall_variables/2, transform/2, is_empty/2, apply_to_node/3]).
 
 -export_type([type/0]).
 -type type() :: term(). %TODO
@@ -21,12 +21,12 @@ is_empty(TyBDD, Memo) ->
   dnf(TyBDD, {fun is_empty_coclause/3, fun is_empty_union/2}).
 is_empty_coclause(_Pos, _Neg, T) -> dnf_ty_tuple:is_empty(T).
 
-mall_variables({Default, Others}) when is_map(Others) ->
+mall_variables({Default, Others}, Memo) when is_map(Others) ->
   lists:usort(lists:flatten(
-    all_variables(Default) ++
-    lists:map(fun({_K,V}) -> all_variables(V) end, maps:to_list(Others))
+    all_variables(Default, memo) ++
+    lists:map(fun({_K,V}) -> all_variables(V, Memo) end, maps:to_list(Others))
   ));
-mall_variables(Ty) -> all_variables(Ty).
+mall_variables(Ty, Memo) -> all_variables(Ty, Memo).
 
 normalize(Size, Ty, Fixed, M) -> dnf(Ty, {
   fun(Pos, Neg, DnfTy) -> normalize_coclause(Size, Pos, Neg, DnfTy, Fixed, M) end,

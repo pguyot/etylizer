@@ -83,21 +83,22 @@
   function = {dnf_var:empty(), #{}} :: {dnf_var:type(), dnf_var_ty_function:type()},
 
   % ===
-  % TODO these are not yet implemented and use a bdd_bool dummy implementation
+  % TODO these are not yet implemented and unused
    
   % dynamic(), ?-type; we could include it in predef, 
   % but dynamic has some special interactions with other parts of the solver (tally, subtyping)
-  dynamic = bdd_bool:empty() :: bdd_bool:type(),
+  dynamic = unused, % TODO #DYNAMIC
 
   % Erlang bitstrings
   % <<E1, E2, ... En>>
-  bitstring = bdd_bool:empty() :: bdd_bool:type(),
+  bitstring = unused, % TODO #DYNAMIC
 
   % unordered Erlang maps with optional and mandatory associations
   % #{t := t, t=> t}
-  map = bdd_bool:empty() :: bdd_bool:type()
+  map = unused % TODO #DYNAMIC
 }).
 -type ty() :: #ty{}.
+-type open_ty() :: #ty{id = open}. % TODO does this type spec mean what I think it does?
 
 % Type API
 % The type api for coinductive types has two types of methods
@@ -182,36 +183,48 @@ negate(Type) ->
   % initializes a corecursive negate operation with a new memoization set on the given type
   % returns a possibly new type with the result and all intermediate created types 
   % added to the implicit state
-  corec([Type], #{}, 
-    fun(Unfoldable, Unfolded, Memo) -> 
-      new_type(Unfoldable, Unfolded, Memo, fun negate_ty/3)
-    end).
+  corec_nostate([Type], fun(Unfoldable, Unfolded, Memo) -> 
+    new_type(Unfoldable, Unfolded, Memo, fun negate_ty/2)
+  end).
 
+-spec negate_ty([ty()], memo()) -> open_ty().
 negate_ty(
-  [#ty{predef = P,atom = A,interval = I,list = L,tuple = {DT, T},function = {DF, F},dynamic = D,bitstring = B,map = Map}], 
-  M) ->
+  [#ty{predef = P,atom = A,interval = I,list = L,tuple = {DT, T},function = {DF, F},dynamic = _D,bitstring = _B,map = _M}], 
+  Memo) ->
   #ty{
         predef = dnf_var_predef:negate(P),
         atom = dnf_var_ty_atom:negate(A),
         interval = dnf_var_int:negate(I),
-        list = dnf_var_ty_list:negate(L, M),
-        tuple = {dnf_var:negate(DT, M), maps:map(fun(_K,V) -> dnf_var_ty_tuple:negate(V, M) end, T)},
-        function = {dnf_var:negate(DF, M), maps:map(fun(_K,V) -> dnf_var_ty_function:negate(V, M) end, F)},
-        % dynamic = ... % TODO 
-        % bitstring = ... % TODO
-        % map = ... % TODO
+        list = dnf_var_ty_list:negate(L, Memo),
+        tuple = {dnf_var:negate(DT, Memo), maps:map(fun(_K,V) -> dnf_var_ty_tuple:negate(V, Memo) end, T)},
+        function = {dnf_var:negate(DF, Memo), maps:map(fun(_K,V) -> dnf_var_ty_function:negate(V, Memo) end, F)}
+        % dynamic = ... % TODO #DYNAMIC
+        % bitstring = ... % TODO #BITSTRING
+        % map = ... % TODO #MAP
     }.
-
-  
 
 -spec intersect(type(), type()) -> type().
 intersect(Type1, Type2) ->
-  {IntersectedType, no_state} = corec(
-    [Type1, Type2], no_state, #{}, 
-    fun(Unfoldable, Unfolded, no_state, Memo) -> 
-      {new_type(Unfoldable, Unfolded, Memo, fun intersect_ty/3), no_state}
-    end),
-  IntersectedType.
+  corec_nostate([Type1, Type2], fun(Unfoldable, Unfolded, Memo) -> 
+    new_type(Unfoldable, Unfolded, Memo, fun intersect_ty/2)
+  end).
+
+-spec intersect_ty([ty(), ty()], memo()) -> open_ty().
+intersect_ty([
+  #ty{predef = P1,atom = A1,interval = I1,list = L1,tuple = T1,function = F1,dynamic = _D1,bitstring = _B1,map = _M1}, 
+  #ty{predef = P2,atom = A2,interval = I2,list = L2,tuple = T2,function = F2,dynamic = _D2,bitstring = _B2,map = _M2}
+], Memo) ->
+  #ty{
+    predef = dnf_var_predef:intersect(P1, P2),
+    atom = dnf_var_ty_atom:intersect(A1, A2),
+    interval = dnf_var_int:intersect(I1, I2),
+    list = dnf_var_ty_list:intersect(L1, L2, M),
+    tuple = multi_intersect(T1, T2, M),
+    function = multi_intersect_fun(F1, F2, M)
+    % dynamic = ... % TODO #DYNAMIC
+    % bitstring = ... % TODO #BITSTRING
+    % map = ... % TODO #MAP
+  }.
 
 % TODO measure if caching difference and union increases performance (even though intersect and negate is cached already)
 -spec difference(type(), type()) -> type().
@@ -225,13 +238,10 @@ union(A, B) ->
 % TODO caching
 -spec is_empty(type()) -> boolean().
 is_empty(Type) -> 
-  % emptyness assumes an already visited type is empty 
-  {Res, no_state} = 
-  corec([Type], no_state, #{}, 
-    fun(Unfoldable, Unfolded, State, Memo) -> 
-      {is_empty_ty(Unfolded, Memo#{Unfoldable => true}), State}
-    end),
-  Res.
+  corec_nostate([Type], fun(Unfoldable, Unfolded, Memo) -> 
+    % emptyness does not need state and assumes an already visited type is empty 
+    is_empty_ty(Unfolded, Memo#{Unfoldable => true})
+  end).
 
 % TODO in CDuce, is_any checks are used to keep the leafs of BDDs uniform; do we need this?
 -spec is_any(type()) -> boolean().
@@ -247,15 +257,14 @@ is_equivalent(Type1, Type2) ->
 
 % TODO type spec 
 % TODO corec
--spec normalize(type(), term(), memo()) -> term().
-normalize(TyRef, Fixed, M) ->
-  case type:normalized_memoized({TyRef, Fixed}) of
-    miss ->
-      % TODO use corec machinery
-      type:memoize_norm({TyRef, Fixed}, Sol = normalize_miss(TyRef, Fixed, M)),
-      Sol;
-    R -> R
-  end.
+-type set_of_constraint_sets() :: list(list(term())). % TODO
+-spec normalize(type(), term(), memo()) -> set_of_constraint_sets().
+normalize(Type, Fixed, M) ->
+  corec_nostate([Type], fun(Unfoldable, Unfolded, Memo) ->
+    % line 1 Figure 3, popl part 2 paper, the codefinition of normalization is the (set of the) unsatisfiable constraint set
+    NewMemo = Memo#{{Unfoldable, Fixed} => [[]]}, %TODO use socs api
+    normalize_ty(Unfolded, Fixed, NewMemo)
+  end).
 
 -spec predef(dnf_var_predef:type()) -> type().
 predef(Predef) ->
@@ -323,6 +332,10 @@ function(ComponentSize, Fun) ->
 function() ->
   store(#ty{function = {dnf_var:any(), #{}}}).
 
+% Projections for components of the type
+% TODO #DYNAMIC
+% TODO #BITSTRING
+% TODO #MAP
 -spec pi
 (predef, type()) -> dnf_var_predef:type();
 (atom, type()) -> dnf_var_ty_atom:type();
@@ -371,30 +384,40 @@ pi(function, TyRef) ->
 
 % TODO this should be a co-recursive function
 -spec all_variables(type()) -> [ty_variable:type()].
-all_variables(TyRef) ->
-  #ty{
+all_variables(Type) ->
+  corec_nostate([Type], fun(Unfoldable, Unfolded, Memo) -> 
+    % memo: variables of a previously seen type have already been collected
+    all_variables_ty(Unfolded, Memo#{Unfoldable => []})
+  end).
+
+% TODO #DYNAMIC
+% TODO #BITSTRING
+% TODO #MAP
+all_variables_ty([#ty{
     predef = Predefs,
     atom = Atoms,
     interval = Ints,
     list = Lists,
     tuple = Tuples,
     function = Functions
-  } = type:load(TyRef),
+  }], Memo) ->
 
-
-  lists:usort(
-    dnf_var_predef:all_variables(Predefs)
-  ++  dnf_var_ty_atom:all_variables(Atoms)
+  lists:usort(dnf_var_predef:all_variables(Predefs)
+  ++ dnf_var_ty_atom:all_variables(Atoms)
   ++ dnf_var_int:all_variables(Ints)
-  ++ dnf_var_ty_list:all_variables(Lists)
-  ++ dnf_var_ty_tuple:mall_variables(Tuples)
-  ++ dnf_var_ty_function:mall_variables(Functions)).
+  ++ dnf_var_ty_list:all_variables(Lists, Memo)
+  ++ dnf_var_ty_tuple:mall_variables(Tuples, Memo)
+  ++ dnf_var_ty_function:mall_variables(Functions, Memo)).
 
-% TODO fix type API
-% TODO Doc
-% TODO proper corec
+
+% TODO #DYNAMIC
+% TODO #BITSTRING
+% TODO #MAP
+% TODO doc not corecursive explain why
 -spec extract_variables(type()) -> {[ty_variable:type()], type()}.
-extract_variables(Ty = #ty{predef = P, atom = A, interval = I, list = L, tuple = T, function = F}) ->
+extract_variables(Type) ->
+  #ty{predef = P, atom = A, interval = I, list = L, tuple = T, function = F} = load(Type),
+
   % TODO this can be implemented more efficiently
   % Current procedure:
   %  1. Collect all variables in all parts
@@ -403,34 +426,36 @@ extract_variables(Ty = #ty{predef = P, atom = A, interval = I, list = L, tuple =
   %  4. Do so for all variables
   PossibleVars = lists:foldl(fun(E, Acc) ->
     sets:intersection(sets:from_list(E), Acc)
-              end, sets:from_list(dnf_var_predef:all_variables(P)),
+              end, 
+    sets:from_list(dnf_var_predef:all_variables(P)),
     [
       dnf_var_ty_atom:all_variables(A),
       dnf_var_int:all_variables(I),
-      dnf_var_ty_list:all_variables(L),
-      dnf_var_ty_tuple:mall_variables(T),
-      dnf_var_ty_function:mall_variables(F)
-      % TODO other parts
+      dnf_var_ty_list:all_variables(L, #{}),
+      dnf_var_ty_tuple:mall_variables(T, #{}),
+      dnf_var_ty_function:mall_variables(F, #{})
     ]),
 
 
   {Vars, NewTy} = lists:foldl(fun(Var, {ExtractedVars, TTy}) ->
-    case ty_rec:is_subtype(ty_rec:variable(Var), TTy) of
+    case is_subtype(variable(Var), TTy) of
       true ->
         {[Var | ExtractedVars],
-        ty_rec:diff(TTy, ty_rec:variable(Var))};
+        diff(TTy, variable(Var))};
       false -> {ExtractedVars, TTy}
     end
-                      end, {[], ty_ref:store(Ty)}, sets:to_list(PossibleVars)),
+                      end, {[], Type}, sets:to_list(PossibleVars)),
 
   {Vars, NewTy}.
 
 % TODO type of map
 -spec substitute(type(), term()) -> type().
-substitute(TyRef, SubstituteMap) ->
-  % the left map is the current projection
-  % the right map is the original substitution map
-  ?TIME(substitute, substitute(TyRef, SubstituteMap, #{})).
+substitute(Type, SubstituteMap) ->
+  % TODO TIME
+  % ?TIME(substitute, substitute(TyRef, SubstituteMap, #{})).
+  corec_nostate([Type], fun(Unfoldable, Unfolded, Memo) -> 
+    new_type(Unfoldable, Unfolded, Memo, fun(Unfolded0, Memo0) -> substitute_ty(Unfolded0, SubstituteMap, Memo0) end)
+  end).
 
 % converts a type to a string representation
 -spec print(type()) -> string().
@@ -492,22 +517,8 @@ transform(TyRef, Ops) ->
 % PRIVATE FUNCTIONS
 % ===
 
-% TODO doc memo set
--type memo() :: #{}.
- 
-% we define two corecursive helper methods: 
-% one that introduces new equations and one for constant term memoizations
-% state is implicit
-% TODO spec
-corec_ref(Types, State, Memo, Continue) -> corec(Types, State, Memo, Continue, reference).
-% TODO spec
-corec_const(Types, State, Memo, Continue, Const) -> corec(Types, State, Memo, Continue, {const, Const}).
-
 % TODO benchmark against 'direct' implementation of corecursive functions
 % wrapper for corec without state
-corec(Unfoldable, Memo, Continue) ->
-  {Result, no_state} = corec(Unfoldable, no_state, Memo, fun(Unfoldable, Unfolded, no_state, Memo) -> {Continue(Unfoldable, Unfolded, Memo), no_state} end),
-  Result.
 
 % A generic corecursion operator for type operators negation/union/intersection 
 % and other constant corecursive functions (is_empty)
@@ -519,6 +530,7 @@ corec(Unfoldable, Memo, Continue) ->
 -type unfoldable() :: [type()].
 -type unfolded() :: [ty()].
 -type state() :: term().
+-type memo() :: #{}.
 -spec 
 % ([unfoldable()], state(), memo(), fun(([unfolded()], state(), memo()) -> {ty(), state()})) -> {type(), State};
 corec(
@@ -526,7 +538,7 @@ corec(
   state(),        % state
   memo(),         % memo
   fun((unfoldable(), unfolded(), state(), memo()) -> {X, state()})
-) -> {X, State}.
+) -> {X, state()}.
 corec(Unfoldable, State, Memo, Continue) ->
  #s{type_tbl = Tys} = state(),
  case Memo of
@@ -558,6 +570,16 @@ corec(Unfoldable, State, Memo, Continue) ->
     %     Continue(UnfoldedTypes, State, Memo#{Types => Const})
     %  end
  end.
+
+corec(Unfoldable, Memo, Continue) ->
+  {Result, no_state} = corec(Unfoldable, no_state, Memo, fun(Unfoldable, Unfolded, no_state, Memo) -> {Continue(Unfoldable, Unfolded, Memo), no_state} end),
+  Result.
+
+corec_nostate(Unfoldable, Continue) ->
+  corec(Unfoldable, #{}, Continue).
+
+corec_state(Unfoldable, State, Continue) ->
+  corec(Unfoldable, State, #{}, Continue).
 
 load({ty_ref, Id}) ->
   #s{type_tbl = #{Id := Ty}} = state(),
@@ -712,16 +734,14 @@ intersect_corec([
     map = bdd_bool:intersect(Map1, Map2) % should be supplied with the memo set
   }).
 
--spec is_empty_corec([type()], memo()) -> boolean(); (type(), memo()) -> boolean().
-% is_empty_corec([Ty = {ty_ref, _}], Memo) -> corec_const(Ty, Memo, fun is_empty_corec/2, true);
-is_empty_ty([#ty{predef = P,atom = A,interval = I,list = L,tuple = T,function = F,dynamic = D,bitstring = B,map = Map}], Memo) ->
+-spec is_empty_ty([type()], memo()) -> boolean().
+is_empty_ty([#ty{predef = P,atom = A,interval = I,list = L,tuple = T,function = F,dynamic = _D,bitstring = _B,map = _Map}], Memo) ->
   dnf_var_predef:is_empty(P)
     andalso dnf_var_ty_atom:is_empty(A)
     andalso dnf_var_int:is_empty(I)
-    % TODO impl
-    andalso bdd_bool:is_empty(D)
-    andalso bdd_bool:is_empty(B)
-    andalso bdd_bool:is_empty(Map)
+    % andalso ?:is_empty(D) % TODO #DYNAMIC
+    % andalso ?:is_empty(B) % TODO #BITSTRING
+    % andalso ?:is_empty(Map) %  TODO #MAP
     andalso dnf_var_ty_list:is_empty(L, Memo)
     andalso multi_empty_tuples(T, Memo)
     andalso multi_empty_functions(F, Memo).
@@ -1011,11 +1031,10 @@ multi_empty_functions({Default, AllFunctions}, M) ->
 
 
 
-normalize_miss(TyRef, Fixed, M) ->
+normalize_ty(Ty, Fixed, M) ->
   % TODO bitstrings
   % TODO dynamic
   % TODO maps
-  Ty = load(TyRef),
   PredefNormalize = dnf_var_predef:normalize(Ty#ty.predef, Fixed, M),
   AtomNormalize = dnf_var_ty_atom:normalize(Ty#ty.atom, Fixed, M),
   Both = constraint_set:merge_and_meet(PredefNormalize, AtomNormalize),
@@ -1078,47 +1097,40 @@ multi_normalize_functions({Default, AllFunctions}, Fixed, M) ->
   ).
 
 
-% var => ty_rec
-% TODO corec substitute
-substitute(TyRef, SubstituteMap, OldMemo) ->
-  #ty{
+% SubstMap :: var => ty_rec
+substitute_ty(#ty{
     predef = Predef,
     atom = Atoms,
     interval = Ints,
     list = Lists,
     tuple = {DefaultT, AllTuples},
-    function = {DefaultF, AllFunctions},
-    bitstring = Bitstring, % TODO
-    dynamic = Dynamic, % TODO
-    map = Map % TODO
-  } = load(TyRef),
+    function = {DefaultF, AllFunctions}
+    % bitstring = Bitstring, % TODO #BITSTRING
+    % dynamic = Dynamic, % TODO #DYNAMIC
+    % map = Map % TODO #MAP
+  }, SubstituteMap, Memo) ->
 
-  NewTy = #ty{
-    predef = ?TIME(vardef, dnf_var_predef:substitute(Predef, SubstituteMap, OldMemo, fun(TTy) -> pi(predef, TTy) end)),
-    atom = ?TIME(atom, dnf_var_ty_atom:substitute(Atoms, SubstituteMap, OldMemo, fun(TTy) -> pi(atom, TTy) end)),
-    interval = ?TIME(int, dnf_var_int:substitute(Ints, SubstituteMap, OldMemo, fun(TTy) -> pi(interval, TTy) end)),
-    list = ?TIME(list, dnf_var_ty_list:substitute(Lists, SubstituteMap, OldMemo, fun(TTy) -> pi(list, TTy) end)),
-    tuple = ?TIME(multi_tuple, multi_substitute(DefaultT, AllTuples, SubstituteMap, OldMemo)),
-    function = ?TIME(multi_fun, multi_substitute_fun(DefaultF, AllFunctions, SubstituteMap, OldMemo)),
-    bitstring = Bitstring,
-    dynamic = Dynamic,
-    map = Map
-  },
-  store(NewTy).
+  #ty{
+    predef = ?TIME(vardef, dnf_var_predef:substitute(Predef, SubstituteMap, Memo, fun(TTy) -> pi(predef, TTy) end)),
+    atom = ?TIME(atom, dnf_var_ty_atom:substitute(Atoms, SubstituteMap, Memo, fun(TTy) -> pi(atom, TTy) end)),
+    interval = ?TIME(int, dnf_var_int:substitute(Ints, SubstituteMap, Memo, fun(TTy) -> pi(interval, TTy) end)),
+    list = ?TIME(list, dnf_var_ty_list:substitute(Lists, SubstituteMap, Memo, fun(TTy) -> pi(list, TTy) end)),
+    tuple = ?TIME(multi_tuple, multi_substitute(DefaultT, AllTuples, SubstituteMap, Memo)),
+    function = ?TIME(multi_fun, multi_substitute_fun(DefaultF, AllFunctions, SubstituteMap, Memo))
+  }.
 
-tuple_keys(TyRef) ->
-  Ty = type:load(TyRef),
+tuple_keys(Type) ->
+  Ty = type:load(Type),
   {_T, Map} = Ty#ty.tuple,
   maps:fold(fun(K,_,AccIn) -> [K | AccIn] end, [], Map).
 
-function_keys(TyRef) ->
-  Ty = type:load(TyRef),
+function_keys(Type) ->
+  Ty = type:load(Type),
   {_T, Map} = Ty#ty.function,
   maps:fold(fun(K,_,AccIn) -> [K | AccIn] end, [], Map).
 
 multi_substitute(DefaultTuple, AllTuples, SubstituteMap, Memo) ->
   % substitute default tuple, get a new default tuple
-%%  NewDefaultTuple = dnf_var_ty_tuple:csubstitute( fun(Ty) -> pi({tuple, default}, Ty) end, {tuple, default}, DefaultTuple, SubstituteMap, Memo),
   NewDefaultTuple = dnf_var_ty_tuple:substitute(DefaultTuple, SubstituteMap, Memo, fun(Ty) -> pi({tuple, default}, Ty) end),
 
   % the default tuple can be substituted to contain other explicit tuple lengths
@@ -1173,15 +1185,16 @@ multi_substitute_fun(DefaultFunction, AllFunctions, SubstituteMap, Memo) ->
 
   {NewDefaultFunction, NewOtherFunctions}.
 
-has_ref(#ty{list = Lists, tuple = {Default, AllTuple}, function = {DefaultF, AllFunction}}, TyRef) ->
-  % TODO sanity remove
-  false = dnf_var_ty_tuple:has_ref(Default, TyRef), % should never happen
-  false = dnf_var_ty_function:has_ref(DefaultF, TyRef), % should never happen
-  dnf_var_ty_list:has_ref(Lists, TyRef)
-  orelse
-  maps:fold(fun(_K,T, All) -> All orelse dnf_var_ty_tuple:has_ref(T, TyRef) end, false, AllTuple)
-  orelse
-  maps:fold(fun(_K,F, All) -> All orelse dnf_var_ty_function:has_ref(F, TyRef) end, false, AllFunction).
+% TODO needed?
+% has_ref(#ty{list = Lists, tuple = {Default, AllTuple}, function = {DefaultF, AllFunction}}, TyRef) ->
+%   % TODO sanity remove
+%   false = dnf_var_ty_tuple:has_ref(Default, TyRef), % should never happen
+%   false = dnf_var_ty_function:has_ref(DefaultF, TyRef), % should never happen
+%   dnf_var_ty_list:has_ref(Lists, TyRef)
+%   orelse
+%   maps:fold(fun(_K,T, All) -> All orelse dnf_var_ty_tuple:has_ref(T, TyRef) end, false, AllTuple)
+%   orelse
+%   maps:fold(fun(_K,F, All) -> All orelse dnf_var_ty_function:has_ref(F, TyRef) end, false, AllFunction).
 
 
 
