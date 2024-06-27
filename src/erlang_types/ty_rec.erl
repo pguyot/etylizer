@@ -182,13 +182,36 @@ negate(Type) ->
   % initializes a corecursive negate operation with a new memoization set on the given type
   % returns a possibly new type with the result and all intermediate created types 
   % added to the implicit state
-  {Res, no_state} = corec_ref([Type], no_state, #{}, fun negate_corec/2),
-  Res.
+  corec([Type], #{}, 
+    fun(Unfoldable, Unfolded, Memo) -> 
+      new_type(Unfoldable, Unfolded, Memo, fun negate_ty/3)
+    end).
+
+negate_ty(
+  [#ty{predef = P,atom = A,interval = I,list = L,tuple = {DT, T},function = {DF, F},dynamic = D,bitstring = B,map = Map}], 
+  M) ->
+  #ty{
+        predef = dnf_var_predef:negate(P),
+        atom = dnf_var_ty_atom:negate(A),
+        interval = dnf_var_int:negate(I),
+        list = dnf_var_ty_list:negate(L, M),
+        tuple = {dnf_var:negate(DT, M), maps:map(fun(_K,V) -> dnf_var_ty_tuple:negate(V, M) end, T)},
+        function = {dnf_var:negate(DF, M), maps:map(fun(_K,V) -> dnf_var_ty_function:negate(V, M) end, F)},
+        % dynamic = ... % TODO 
+        % bitstring = ... % TODO
+        % map = ... % TODO
+    }.
+
+  
 
 -spec intersect(type(), type()) -> type().
 intersect(Type1, Type2) ->
-  {Res, no_state} = corec_ref([Type1, Type2], no_state, #{}, fun intersect_corec/2),
-  Res.
+  {IntersectedType, no_state} = corec(
+    [Type1, Type2], no_state, #{}, 
+    fun(Unfoldable, Unfolded, no_state, Memo) -> 
+      {new_type(Unfoldable, Unfolded, Memo, fun intersect_ty/3), no_state}
+    end),
+  IntersectedType.
 
 % TODO measure if caching difference and union increases performance (even though intersect and negate is cached already)
 -spec difference(type(), type()) -> type().
@@ -201,9 +224,13 @@ union(A, B) ->
 
 % TODO caching
 -spec is_empty(type()) -> boolean().
-is_empty(Ty) -> 
+is_empty(Type) -> 
   % emptyness assumes an already visited type is empty 
-  {Res, no_state} = corec_const([Ty], no_state, #{}, fun is_empty_corec/2, true),
+  {Res, no_state} = 
+  corec([Type], no_state, #{}, 
+    fun(Unfoldable, Unfolded, State, Memo) -> 
+      {is_empty_ty(Unfolded, Memo#{Unfoldable => true}), State}
+    end),
   Res.
 
 % TODO in CDuce, is_any checks are used to keep the leafs of BDDs uniform; do we need this?
@@ -409,9 +436,9 @@ substitute(TyRef, SubstituteMap) ->
 -spec print(type()) -> string().
 % print(Ref) -> pretty:render_ty(ast_lib:erlang_ty_to_ast(Ref)) .
 print(Type = {ty_ref, Id}) -> 
-  Str = pretty:format([], [Ty], #{}),
-  integer_to_list(Id) ++ " := " ++
-  corec_fun([Type], _Stack = [], #{}, fun print_corec/2, fun([{ty_ref, Id}]) -> integer_to_list(Id) end).
+  % Str = pretty:format([], [Ty], #{}),
+  % collect all types
+  AllTypes = corec_fun([Ty], _AllTypesState = [], #{}, fun print_corec/2, fun([Ref], State) -> {[Ref], State} end).
   
 
 print_corec([Ty = {ty_ref, _}], Memo) -> 
@@ -476,6 +503,12 @@ corec_ref(Types, State, Memo, Continue) -> corec(Types, State, Memo, Continue, r
 % TODO spec
 corec_const(Types, State, Memo, Continue, Const) -> corec(Types, State, Memo, Continue, {const, Const}).
 
+% TODO benchmark against 'direct' implementation of corecursive functions
+% wrapper for corec without state
+corec(Unfoldable, Memo, Continue) ->
+  {Result, no_state} = corec(Unfoldable, no_state, Memo, fun(Unfoldable, Unfolded, no_state, Memo) -> {Continue(Unfoldable, Unfolded, Memo), no_state} end),
+  Result.
+
 % A generic corecursion operator for type operators negation/union/intersection 
 % and other constant corecursive functions (is_empty)
 % We track the codefinition inside the memoization map
@@ -483,14 +516,22 @@ corec_const(Types, State, Memo, Continue, Const) -> corec(Types, State, Memo, Co
 % The operator provides two ways of specifying memoization: 
 % a constant term memoization (used for e.g. is_empty, Boolean return) 
 % and a new equation reference memoization (used for e.g. type operators)
--spec corec
-([type()], term(), memo(), fun(([ty()], term(), memo()) -> {ty(), term()}), reference) -> {type(), State};
-([type()], term(), memo(), fun(([ty()], term(), memo()) -> {ty()), term()}, {const, Const}) -> {Const, State}.
-corec(Types, State, Memo, Continue, Option) ->
+-type unfoldable() :: [type()].
+-type unfolded() :: [ty()].
+-type state() :: term().
+-spec 
+% ([unfoldable()], state(), memo(), fun(([unfolded()], state(), memo()) -> {ty(), state()})) -> {type(), State};
+corec(
+  unfoldable(),   % unfoldable
+  state(),        % state
+  memo(),         % memo
+  fun((unfoldable(), unfolded(), state(), memo()) -> {X, state()})
+) -> {X, State}.
+corec(Unfoldable, State, Memo, Continue) ->
  #s{type_tbl = Tys} = state(),
  case Memo of
-  % memoization of a type, terminate and return co-definition
-   #{Types := Codefinition} -> Codefinition;
+  % memoization, terminate and return co-definition
+   #{Unfoldable := Codefinition} -> Codefinition;
    _ -> 
      UnfoldList = fun(L) -> 
       % TODO is it more efficient to get all elements from a map at once?
@@ -499,20 +540,23 @@ corec(Types, State, Memo, Continue, Option) ->
       % given a list of types, fetch their type record from the given type_tbl
       [begin #{T := Ty} = Tys, Ty end || T <- L] 
       end,
-     UnfoldedTypes = UnfoldList(Types),
-     case Option of 
-       reference -> 
-        NewId = new_id(),
-        NewMemo =  Memo#{Types => NewId},
-        {Ty, NewState} = Continue(UnfoldedTypes, State, NewMemo),
+     Unfolded = UnfoldList(Unfoldable),
+     Continue(Unfoldable, Unfolded, State, Memo)
+    %  NewMemo = SetCodefinition(Memo, Types),
+    %  Continue(Unfolded, State, NewMemo)
+    %  case Option of 
+    %    reference -> 
+    %     NewId = new_id(),
+    %     NewMemo =  Memo#{Types => NewId},
+    %     {Ty, NewState} = Continue(UnfoldedTypes, State, NewMemo),
 
-        % store new type record
-        % store may return something other than the given NewId if sharing is employed
-        {store(NewId, Ty), NewState};
-       % 'unfold' the input(s), memoize the constant term, and apply Continue
-       {const, Const} -> 
-        Continue(UnfoldedTypes, State, Memo#{Types => Const})
-     end
+    %     % store new type record
+    %     % store may return something other than the given NewId if sharing is employed
+    %     {store(NewId, Ty), NewState};
+    %    % 'unfold' the input(s), memoize the constant term, and apply Continue
+    %    {const, Const} -> 
+    %     Continue(UnfoldedTypes, State, Memo#{Types => Const})
+    %  end
  end.
 
 load({ty_ref, Id}) ->
@@ -631,28 +675,22 @@ new_id() ->
   Id.
 
 
+% type() -> type()
+% type(), type() -> type()
+% type() -> string()
+% type() -> [type()]
+
+% [type()], memo(), 
+
 % This definition is used to continue a (nested) corecursive negation
--spec negate_corec(type(), memo()) -> type(); (ty(), memo()) -> ty().
-negate_corec([Type = {ty_ref, _}], Memo) -> corec_ref(Type, Memo, fun negate_corec/2);
+% -spec negate_corec([type()], corec_state(), memo()) -> {type(), corec_state()}; ([ty()], term(), memo()) -> ty().
+% negate_corec([Type = {ty_ref, _}], Memo) -> 
+%   corec_ref(Type, State, Memo, fun negate_corec/2);
 % negation delegates the operation to its components.
 % components that could be co-inductive are supplied with the current memoization set
-negate_corec([#ty{predef = P,atom = A,interval = I,list = L,tuple = {DT, T},function = {DF, F},dynamic = D,bitstring = B,map = Map}], M) ->
-  #ty{
-        predef = dnf_var_predef:negate(P),
-        atom = dnf_var_ty_atom:negate(A),
-        interval = dnf_var_int:negate(I),
-        list = dnf_var_ty_list:negate(L, M),
-        tuple = {dnf_var:negate(DT, M), maps:map(fun(_K,V) -> dnf_var_ty_tuple:negate(V, M) end, T)},
-        function = {dnf_var:negate(DF, M), maps:map(fun(_K,V) -> dnf_var_ty_function:negate(V, M) end, F)},
-        % TODO implement
-        % TODO doc and tag issues
-        dynamic = bdd_bool:negate(D),
-        bitstring = bdd_bool:negate(B), %TODO do bitstrings need memo?
-        map = bdd_bool:negate(Map) % should be supplied with the memo set
-    }.
 
 % This definition is used to continue a (nested) corecursive intersection
--spec intersect_corec(type(), memo()) -> type(); (ty(), memo()) -> ty().
+-spec intersect_corec(type(), term(), memo()) -> type(); (ty(), term(), memo()) -> ty().
 intersect_corec([Type1 = {ty_ref, _}, Type2], Memo) -> corec_ref([Type1, Type2], Memo, fun negate_corec/2);
 % negation delegates the operation to its components.
 % components that could be co-inductive are supplied with the current memoization set
@@ -675,8 +713,8 @@ intersect_corec([
   }).
 
 -spec is_empty_corec([type()], memo()) -> boolean(); (type(), memo()) -> boolean().
-is_empty_corec([Ty = {ty_ref, _}], Memo) -> corec_const(Ty, Memo, fun is_empty_corec/2, true);
-is_empty_corec([#ty{predef = P,atom = A,interval = I,list = L,tuple = T,function = F,dynamic = D,bitstring = B,map = Map}], Memo) ->
+% is_empty_corec([Ty = {ty_ref, _}], Memo) -> corec_const(Ty, Memo, fun is_empty_corec/2, true);
+is_empty_ty([#ty{predef = P,atom = A,interval = I,list = L,tuple = T,function = F,dynamic = D,bitstring = B,map = Map}], Memo) ->
   dnf_var_predef:is_empty(P)
     andalso dnf_var_ty_atom:is_empty(A)
     andalso dnf_var_int:is_empty(I)
@@ -692,6 +730,11 @@ is_empty_corec([#ty{predef = P,atom = A,interval = I,list = L,tuple = T,function
 % ========
 % TODO
 % ========
+
+new_type(Unfoldable, Unfolded, Memo, Continue) ->
+  NewId = new_id(),
+  NewTy = Continue(Unfolded, Memo#{Unfoldable => NewId}),
+  store(NewId, NewTy).
 
 maybe_intersect(Z2, Other, Intersect) ->
   case subty:is_subty(symtab:empty(), Z2, Other) of %TODO symtab?
