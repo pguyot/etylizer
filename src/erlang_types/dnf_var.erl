@@ -4,7 +4,7 @@
 -define(TERMINAL, bdd_bool).
 
 -export([is_empty/1, normalize/3, substitute/4]).
--export([var/1, all_variables/1, transform/2, apply_to_node/3]).
+-export([var/1, all_variables/2, transform/2, apply_to_node/3]).
 
 -export_type([type/0]).
 -type type() :: term(). %TODO

@@ -98,7 +98,7 @@
   map = unused % TODO #DYNAMIC
 }).
 -type ty() :: #ty{}.
--type open_ty() :: #ty{id = open}. % TODO does this type spec mean what I think it does?
+-type open_ty() :: #ty{id :: open}. % TODO does this type spec mean what I think it does?
 
 % Type API
 % The type api for coinductive types has two types of methods
@@ -125,7 +125,7 @@
 % subtyping algorithm
 -export([is_empty/1, is_subtype/2, is_equivalent/2]).
 % tallying (phase 1)
--export([normalize/3]).
+-export([normalize/2]).
 
 % constructors
 -export([predef/0, predef/1, variable/1, atom/1, interval/1, tuple/2, list/1, function/2, list/0, function/0, atom/0, interval/0, tuple/0]).
@@ -209,7 +209,7 @@ intersect(Type1, Type2) ->
     new_type(Unfoldable, Unfolded, Memo, fun intersect_ty/2)
   end).
 
--spec intersect_ty([ty(), ty()], memo()) -> open_ty().
+-spec intersect_ty([ty()], memo()) -> open_ty().
 intersect_ty([
   #ty{predef = P1,atom = A1,interval = I1,list = L1,tuple = T1,function = F1,dynamic = _D1,bitstring = _B1,map = _M1}, 
   #ty{predef = P2,atom = A2,interval = I2,list = L2,tuple = T2,function = F2,dynamic = _D2,bitstring = _B2,map = _M2}
@@ -218,9 +218,9 @@ intersect_ty([
     predef = dnf_var_predef:intersect(P1, P2),
     atom = dnf_var_ty_atom:intersect(A1, A2),
     interval = dnf_var_int:intersect(I1, I2),
-    list = dnf_var_ty_list:intersect(L1, L2, M),
-    tuple = multi_intersect(T1, T2, M),
-    function = multi_intersect_fun(F1, F2, M)
+    list = dnf_var_ty_list:intersect(L1, L2, Memo),
+    tuple = multi_intersect(T1, T2, Memo),
+    function = multi_intersect_fun(F1, F2, Memo)
     % dynamic = ... % TODO #DYNAMIC
     % bitstring = ... % TODO #BITSTRING
     % map = ... % TODO #MAP
@@ -258,8 +258,8 @@ is_equivalent(Type1, Type2) ->
 % TODO type spec 
 % TODO corec
 -type set_of_constraint_sets() :: list(list(term())). % TODO
--spec normalize(type(), term(), memo()) -> set_of_constraint_sets().
-normalize(Type, Fixed, M) ->
+-spec normalize(type(), term()) -> set_of_constraint_sets().
+normalize(Type, Fixed) ->
   corec_nostate([Type], fun(Unfoldable, Unfolded, Memo) ->
     % line 1 Figure 3, popl part 2 paper, the codefinition of normalization is the (set of the) unsatisfiable constraint set
     NewMemo = Memo#{{Unfoldable, Fixed} => [[]]}, %TODO use socs api
@@ -441,7 +441,7 @@ extract_variables(Type) ->
     case is_subtype(variable(Var), TTy) of
       true ->
         {[Var | ExtractedVars],
-        diff(TTy, variable(Var))};
+        difference(TTy, variable(Var))};
       false -> {ExtractedVars, TTy}
     end
                       end, {[], Type}, sets:to_list(PossibleVars)),
@@ -460,18 +460,24 @@ substitute(Type, SubstituteMap) ->
 % converts a type to a string representation
 -spec print(type()) -> string().
 % print(Ref) -> pretty:render_ty(ast_lib:erlang_ty_to_ast(Ref)) .
-print(Type = {ty_ref, Id}) -> 
-  % Str = pretty:format([], [Ty], #{}),
-  % collect all types
-  AllTypes = corec_fun([Ty], _AllTypesState = [], #{}, fun print_corec/2, fun([Ref], State) -> {[Ref], State} end).
+print(Type) -> 
+  % map accumulator for keeping type -> string mappings
+  {ok, TypeStringMap} = corec_state([Type], #{}, fun([Type], Unfolded, State, Memo) -> 
+    case State of
+      #{Type := Str} -> error(string_already_present_for_ty);
+      _ -> 
+        print_ty(Unfolded, Type, State, Memo#{Type => ok})
+    end
+  end),
+  maps:fold(fun(K, V, Acc) -> V ++ "\n" end, "", TypeStringMap).
   
-
-print_corec([Ty = {ty_ref, _}], Memo) -> 
-  "RESULT := " ++
-  corec_fun([Ty], Memo, fun print_corec/2, fun([{ty_ref, Id}]) -> integer_to_list(Id) end);
-print_corec([#ty{predef = P,atom = A,interval = I,list = L,tuple = T,function = F,dynamic = D,bitstring = B,map = Map}], Memo) ->
-  "ty{}".
-
+% TODO #DYNAMIC
+% TODO #BITSTRING
+% TODO #MAP
+print_ty([#ty{predef = P,atom = A,interval = I,list = L,tuple = T,function = F,dynamic = D,bitstring = B,map = Map}], Type, TypeStrMap, Memo) ->
+  {ty_ref, Id} = Type,
+  NewMap = TypeStrMap#{Type => integer_to_list(Id) ++ " := TODO"},
+  {ok, NewMap}.
 
 % TODO spec 
 % TODO doc 
@@ -712,27 +718,27 @@ new_id() ->
 % components that could be co-inductive are supplied with the current memoization set
 
 % This definition is used to continue a (nested) corecursive intersection
--spec intersect_corec(type(), term(), memo()) -> type(); (ty(), term(), memo()) -> ty().
-intersect_corec([Type1 = {ty_ref, _}, Type2], Memo) -> corec_ref([Type1, Type2], Memo, fun negate_corec/2);
+% -spec intersect_corec(type(), term(), memo()) -> type(); (ty(), term(), memo()) -> ty().
+% intersect_corec([Type1 = {ty_ref, _}, Type2], Memo) -> corec_ref([Type1, Type2], Memo, fun negate_corec/2);
 % negation delegates the operation to its components.
 % components that could be co-inductive are supplied with the current memoization set
-intersect_corec([
-  #ty{predef = P1,atom = A1,interval = I1,list = L1,tuple = T1,function = F1,dynamic = D1,bitstring = B1,map = Map1}, 
-  #ty{predef = P2,atom = A2,interval = I2,list = L2,tuple = T2,function = F2,dynamic = D2,bitstring = B2,map = Map2}
-], M) ->
-  type:store(#ty{
-    predef = dnf_var_predef:intersect(P1, P2),
-    atom = dnf_var_ty_atom:intersect(A1, A2),
-    interval = dnf_var_int:intersect(I1, I2),
-    list = dnf_var_ty_list:intersect(L1, L2, M),
-    tuple = multi_intersect(T1, T2, M),
-    function = multi_intersect_fun(F1, F2, M),
-    % TODO implement
-    % TODO doc and tag issues
-    dynamic = bdd_bool:intersect(D1, D2),
-    bitstring = bdd_bool:intersect(B1, B2), %TODO do bitstrings need memo?
-    map = bdd_bool:intersect(Map1, Map2) % should be supplied with the memo set
-  }).
+% intersect_corec([
+%   #ty{predef = P1,atom = A1,interval = I1,list = L1,tuple = T1,function = F1,dynamic = D1,bitstring = B1,map = Map1}, 
+%   #ty{predef = P2,atom = A2,interval = I2,list = L2,tuple = T2,function = F2,dynamic = D2,bitstring = B2,map = Map2}
+% ], M) ->
+%   type:store(#ty{
+%     predef = dnf_var_predef:intersect(P1, P2),
+%     atom = dnf_var_ty_atom:intersect(A1, A2),
+%     interval = dnf_var_int:intersect(I1, I2),
+%     list = dnf_var_ty_list:intersect(L1, L2, M),
+%     tuple = multi_intersect(T1, T2, M),
+%     function = multi_intersect_fun(F1, F2, M),
+%     % TODO implement
+%     % TODO doc and tag issues
+%     dynamic = bdd_bool:intersect(D1, D2),
+%     bitstring = bdd_bool:intersect(B1, B2), %TODO do bitstrings need memo?
+%     map = bdd_bool:intersect(Map1, Map2) % should be supplied with the memo set
+%   }).
 
 -spec is_empty_ty([type()], memo()) -> boolean().
 is_empty_ty([#ty{predef = P,atom = A,interval = I,list = L,tuple = T,function = F,dynamic = _D,bitstring = _B,map = _Map}], Memo) ->
