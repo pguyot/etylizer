@@ -4,7 +4,7 @@
 -define(ELEMENT, ty_variable).
 -define(TERMINAL, ty_atom).
 
--export([apply_to_node/3]).
+-export([to_line/1, apply_to_node/3]).
 -export([is_empty/1, normalize/3, substitute/4]).
 -export([var/1, ty_atom/1, all_variables/2]).
 -export([transform/2]).
@@ -13,6 +13,18 @@
 -type type() :: term(). %TODO
 
 -include("bdd_var.hrl").
+
+to_line(DnfVar) ->
+  dnf(DnfVar, {
+    fun
+      (P,N,T) ->
+        {Pos, Neg} = ?TERMINAL:to_line(T),
+        P2 = [?ELEMENT:to_line(V) || V <- P],
+        P3 = [?ELEMENT:to_line(V) || V <- N],
+        [{P2, P3, Pos, Neg}]
+    end,
+    fun(F1, F2) -> F1 ++ F2 end
+  }).
 
 ty_atom(Atom) -> terminal(Atom).
 var(Var) -> node(Var).

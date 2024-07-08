@@ -135,7 +135,7 @@
 % other co-recursive functions
 -export([
   % collect all variables used in anywhere in the type
-  all_variables/1,
+  all_variables/1, all_variables_corec/2,
   % given a type that consists of a union of (sub-)types, 
   % extract out common variables that are contained in every part of the type
   extract_variables/1,
@@ -382,10 +382,14 @@ pi(function, TyRef) ->
   Ty = type:load(TyRef),
   Ty#ty.function.
 
-% TODO this should be a co-recursive function
+% This initializes the co-recursive call
 -spec all_variables(type()) -> [ty_variable:type()].
-all_variables(Type) ->
-  corec_nostate([Type], fun(Unfoldable, Unfolded, Memo) -> 
+all_variables(Type) -> all_variables_corec(Type, #{}).
+
+% This is used to continue a nested co-recursive call
+-spec all_variables_corec(type(), memo()) -> [ty_variable:type()].
+all_variables_corec(Type, M) ->
+  corec_nostate([Type], M, fun(Unfoldable, Unfolded, Memo) -> 
     % memo: variables of a previously seen type have already been collected
     all_variables_ty(Unfolded, Memo#{Unfoldable => []})
   end).
@@ -416,6 +420,7 @@ all_variables_ty([#ty{
 % TODO doc not corecursive explain why
 -spec extract_variables(type()) -> {[ty_variable:type()], type()}.
 extract_variables(Type) ->
+  io:format(user,"Extracting: ~p~n", [Type]),
   #ty{predef = P, atom = A, interval = I, list = L, tuple = T, function = F} = load(Type),
 
   % TODO this can be implemented more efficiently
@@ -427,15 +432,14 @@ extract_variables(Type) ->
   PossibleVars = lists:foldl(fun(E, Acc) ->
     sets:intersection(sets:from_list(E), Acc)
               end, 
-    sets:from_list(dnf_var_predef:all_variables(P)),
+    sets:from_list(dnf_var_predef:all_variables(P, #{})),
     [
-      dnf_var_ty_atom:all_variables(A),
-      dnf_var_int:all_variables(I),
+      dnf_var_ty_atom:all_variables(A, #{}),
+      dnf_var_int:all_variables(I, #{}),
       dnf_var_ty_list:all_variables(L, #{}),
       dnf_var_ty_tuple:mall_variables(T, #{}),
       dnf_var_ty_function:mall_variables(F, #{})
     ]),
-
 
   {Vars, NewTy} = lists:foldl(fun(Var, {ExtractedVars, TTy}) ->
     case is_subtype(variable(Var), TTy) of
@@ -474,8 +478,19 @@ print(Type) ->
 % TODO #DYNAMIC
 % TODO #BITSTRING
 % TODO #MAP
-print_ty([#ty{predef = P,atom = A,interval = I,list = L,tuple = T,function = F,dynamic = D,bitstring = B,map = Map}], Type, TypeStrMap, Memo) ->
+print_ty([Ty = #ty{predef = P,atom = A,interval = I,list = L,tuple = T,function = F,dynamic = D,bitstring = B,map = Map}], Type, TypeStrMap, Memo) ->
   {ty_ref, Id} = Type,
+
+  % First: extract all variables
+  {Vars, TypeWithoutVars} = extract_variables(Type),
+
+  #ty{predef = P0, atom = A0} = load(TypeWithoutVars),
+  PredefLine = dnf_var_predef:to_line(P0),
+  AtomLine = dnf_var_ty_atom:to_line(A0),
+
+  io:format(user,"vars: ~p~nLine: ~p~n", [Vars, AtomLine]),
+
+  
   NewMap = TypeStrMap#{Type => integer_to_list(Id) ++ " := TODO"},
   {ok, NewMap}.
 
@@ -577,18 +592,23 @@ corec(Unfoldable, State, Memo, Continue) ->
     %  end
  end.
 
-corec(Unfoldable, Memo, Continue) ->
-  {Result, no_state} = corec(Unfoldable, no_state, Memo, fun(Unfoldable, Unfolded, no_state, Memo) -> {Continue(Unfoldable, Unfolded, Memo), no_state} end),
-  Result.
 
 corec_nostate(Unfoldable, Continue) ->
-  corec(Unfoldable, #{}, Continue).
+  corec_nostate(Unfoldable, #{}, Continue).
+
+corec_nostate(Unfoldable, Memo, Continue) ->
+  {Result, no_state} = corec(Unfoldable, no_state, Memo, fun(Unfoldable, Unfolded, no_state, Memo) -> {Continue(Unfoldable, Unfolded, Memo), no_state} end),
+  Result.
 
 corec_state(Unfoldable, State, Continue) ->
   corec(Unfoldable, State, #{}, Continue).
 
-load({ty_ref, Id}) ->
-  #s{type_tbl = #{Id := Ty}} = state(),
+corec_state(Unfoldable, State, Memo, Continue) ->
+  corec(Unfoldable, State, Memo, fun(Unfoldable, Unfolded, State, Memo) -> {Continue(Unfoldable, Unfolded, Memo), State} end).
+
+load(Ref = {ty_ref, Id}) ->
+  S = state(),
+  #s{type_tbl = #{Ref := Ty}} = S,
   Ty.
 
 store(OldTy = #ty{id = open}) ->

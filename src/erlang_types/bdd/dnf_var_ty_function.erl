@@ -19,7 +19,7 @@ var(Var) -> node(Var).
 
 mall_variables({Default, Others}, Memo) when is_map(Others) ->
   lists:usort(lists:flatten(
-    all_variables(Default, Memo) ++
+    dnf_var:all_variables(Default, Memo) ++
     lists:map(fun({_K,V}) -> all_variables(V, Memo) end, maps:to_list(Others))
   ));
 mall_variables(Ty, Memo) -> all_variables(Ty, Memo).

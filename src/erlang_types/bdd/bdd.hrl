@@ -188,13 +188,12 @@ has_ref(Ty, Ref) ->
   }).
 
 all_variables(Ty, M) ->
-  error(todo_use_memo_in_all_vars_bdd),
   dnf(Ty, {
     fun
       (P,N,T) ->
-        ?TERMINAL:all_variables(T) ++
-          lists:foldl(fun(L, Acc) -> Acc ++ ?ELEMENT:all_variables(L) end, [], P) ++
-          lists:foldl(fun(L, Acc) -> Acc ++ ?ELEMENT:all_variables(L) end, [], N)
+        ?TERMINAL:all_variables(T, M) ++
+          lists:foldl(fun(L, Acc) -> Acc ++ ?ELEMENT:all_variables(L, M) end, [], P) ++
+          lists:foldl(fun(L, Acc) -> Acc ++ ?ELEMENT:all_variables(L, M) end, [], N)
     end,
     fun(F1, F2) -> lists:usort(F1() ++ F2()) end
   }).

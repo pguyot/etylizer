@@ -6,7 +6,7 @@
 
 -export([empty/0, any/0]).
 -export([union/2, intersect/2, diff/2, negate/1, is_any/1]).
--export([is_empty/1, substitute/4, map_pi/1, has_ref/2, all_variables/1, transform/2]).
+-export([is_empty/1, substitute/4, map_pi/1, has_ref/2, all_variables/2, transform/2]).
 
 -export_type([type/0]).
 -type type() :: 0 | 1.
@@ -25,6 +25,6 @@ substitute(_,X,_,_) -> X.
 % there is nothing to substitute in a bdd_bool
 map_pi(_) -> #{}.
 has_ref(_,_) -> false.
-all_variables(_) -> [].
+all_variables(_, _) -> [].
 transform(0, #{empty := E}) -> E();
 transform(1, #{any := E}) -> E().

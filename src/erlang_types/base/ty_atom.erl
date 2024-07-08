@@ -1,16 +1,16 @@
 -module(ty_atom).
 
 %% Efficient atom representation
--export([compare/2, equal/2]).
+-export([to_line/1, compare/2, equal/2]).
 -export([empty/0, any/0]).
 -export([union/2, intersect/2, diff/2, negate/1, is_any/1]).
 -export([is_empty/1]).
 -export([transform/2]).
 -export([finite/1, cofinite/1]).
--export([has_ref/2, normalize/5, substitute/4, all_variables/1]).
+-export([has_ref/2, normalize/5, substitute/4, all_variables/2]).
 
 has_ref(_, _) -> false.
-all_variables(_) -> [].
+all_variables(_, _) -> [].
 substitute(_, Ty, _, _) -> Ty.
 
 transform({Atoms, finite}, #{to_atom := ToAtom, union := Union}) ->
@@ -20,6 +20,11 @@ transform({Atoms, cofinite}, #{to_atom := ToAtom, union := Union, negate := Nega
 
 empty() -> {{0, nil}, finite}.
 any() -> {{0, nil}, cofinite}.
+
+to_line({Set, finite}) ->
+  {gb_sets:to_list(Set), []};
+to_line({Set, cofinite}) ->
+  {[], gb_sets:to_list(Set)}.
 
 finite([]) ->
   any();

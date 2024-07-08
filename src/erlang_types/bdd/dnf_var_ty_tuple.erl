@@ -23,7 +23,7 @@ is_empty_coclause(_Pos, _Neg, T) -> dnf_ty_tuple:is_empty(T).
 
 mall_variables({Default, Others}, Memo) when is_map(Others) ->
   lists:usort(lists:flatten(
-    all_variables(Default, memo) ++
+    dnf_var:all_variables(Default, Memo) ++
     lists:map(fun({_K,V}) -> all_variables(V, Memo) end, maps:to_list(Others))
   ));
 mall_variables(Ty, Memo) -> all_variables(Ty, Memo).
