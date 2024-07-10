@@ -38,7 +38,7 @@ tally(_SymTab, Constraints, FixedVars, Order) ->
   Order(),
 
   % uncomment to extract a tally test case config file
-  % io:format(user, "~s~n", [test_utils:format_tally_config(sets:to_list(Constraints), FixedVars)]),
+  io:format(user, "~s~n", [test_utils:format_tally_config(sets:to_list(Constraints), FixedVars)]),
 
   InternalConstraints = lists:map(
     fun({scsubty, _, S, T}) -> {ast_lib:ast_to_erlang_ty(S), ast_lib:ast_to_erlang_ty(T)} end,

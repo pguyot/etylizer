@@ -128,7 +128,15 @@ to_cduce({predef, none}) -> "Empty";
 to_cduce({predef, integer}) -> "Int";
 % floats are treated to tags in CDuce
 to_cduce({predef, float}) -> "`float";
+to_cduce({predef_alias, boolean}) -> "Bool";
 to_cduce({singleton, float}) -> "`float";
+to_cduce({singleton, false}) -> "`false";
+to_cduce({singleton, true}) -> "`true";
+% TODO check
+to_cduce({predef_alias, nonempty_list}) -> io_lib:format("([ Any* ])", []);
+to_cduce({nonempty_list, X}) -> io_lib:format("([ ~s* ])",[to_cduce(X)]);
+to_cduce({list, X}) -> io_lib:format("([ ~s* ])",[to_cduce(X)]);
+to_cduce({empty_list}) -> io_lib:format("[]", []);
 to_cduce({range, X, Y}) -> io_lib:format("(~s--~s)",[erlang:integer_to_list(X), erlang:integer_to_list(Y)]);
 to_cduce({singleton, I}) when is_integer(I) -> erlang:integer_to_list(I);
 to_cduce({negation, X}) -> io_lib:format("(Any \\ ~s)", [to_cduce(X)]);
