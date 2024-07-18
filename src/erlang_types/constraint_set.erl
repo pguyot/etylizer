@@ -117,20 +117,26 @@ has_smaller_constraint_w(Con, [C | S]) ->
     _ -> has_smaller_constraint(Con, S)
   end.
 
+is_smaller(C1, C2) -> 
+  X = is_smaller0(C1, C2),
+  % io:format(user,"~p : ~p~n", [erlang:phash2(C1) + erlang:phash2(C2), X]),
+  X.
+
+
 % C1 and C2 are sorted by variable order
-is_smaller([], _C2) -> true;
-is_smaller(_C1, []) -> false;
-is_smaller([{V1, T1, T2} | C1], [{V2, S1, S2} | C2]) when V1 == V2 ->
+is_smaller0([], _C2) -> true;
+is_smaller0(_C1, []) -> false;
+is_smaller0([{V1, T1, T2} | C1], [{V2, S1, S2} | C2]) when V1 == V2 ->
   case ty_rec:is_subtype(T1, S1) andalso ty_rec:is_subtype(S2, T2) of
-    true -> is_smaller(C1, C2);
+    true -> is_smaller0(C1, C2);
     _ -> false
   end;
-is_smaller([{V1, _, _} | _C1], [{V2, _, _} | _C2]) when V1 < V2 ->
+is_smaller0([{V1, _, _} | _C1], [{V2, _, _} | _C2]) when V1 < V2 ->
   % V1 is not in the other set
-  % not smaller
+  % not smaller0
   false;
-is_smaller(C1, [{_V2, _, _} | C2]) ->
-  is_smaller(C1, C2).
+is_smaller0(C1, [{_V2, _, _} | C2]) ->
+  is_smaller0(C1, C2).
 
 
 -ifdef(TEST).

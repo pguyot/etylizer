@@ -489,11 +489,32 @@ solutions(Number) ->
 %                                          end}}
 % .
 
-filtermap_cons_test_() ->
-  {timeout, 2000, {"filtermap_cons", fun() ->
+% filtermap_cons_test_() ->
+%   {timeout, 200000, {"filtermap_cons", fun() ->
+%     ecache:reset_all(),
+%     io:format(user,"DO~n", []),
+%     {ok, [Cons]} = file:consult("test_files/tally/filtermap_cons.config"),
+%     Vars = lists:foldl(fun({S, T}, Acc) -> (ty_rec:all_variables(ast_lib:ast_to_erlang_ty(S)) ++ ty_rec:all_variables(ast_lib:ast_to_erlang_ty(T)) ++ Acc) end, [], Cons),
+%     VarOrder = lists:map(fun(V) -> {var, Name} = ast_lib:erlang_ty_var_to_var(V), Name end,lists:sort(lists:flatten(Vars))),
+
+%     % to print out cduce command
+%     io:format(user, "~s~n", [test_utils:ety_to_cduce_tally(Cons, VarOrder)]),
+
+%     test_tally(
+%       VarOrder,
+%       Cons,
+%       % TODO CDuce has 50 solutions, order is not used properly, see #72
+%       solutions(58)
+%     ),
+%     ok
+%                                          end}}
+% .
+
+my_and_fail_test_() ->
+  {timeout, 200000, {"my_and_fail", fun() ->
     ecache:reset_all(),
     io:format(user,"DO~n", []),
-    {ok, [Cons]} = file:consult("test_files/tally/filtermap_cons.config"),
+    {ok, [Cons]} = file:consult("test_files/tally/my_and_fail.config"),
     Vars = lists:foldl(fun({S, T}, Acc) -> (ty_rec:all_variables(ast_lib:ast_to_erlang_ty(S)) ++ ty_rec:all_variables(ast_lib:ast_to_erlang_ty(T)) ++ Acc) end, [], Cons),
     VarOrder = lists:map(fun(V) -> {var, Name} = ast_lib:erlang_ty_var_to_var(V), Name end,lists:sort(lists:flatten(Vars))),
 
