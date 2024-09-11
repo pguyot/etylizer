@@ -16,15 +16,26 @@
 % If the newly requested type is found to be shared with a previously defined type, 
 % the number of the newly requested type is skipped.
 -type type() :: {ty_ref, integer()}.
+% type alt is only used if sharing is detected and denotes sharing by adding a type_alt => type mapping to the type table
+-type type_alt() :: {ty_alt, integer()}.
 
 % In addition to the number, a type reference can optionally be 
 % equipped with a name. 
 % These names are used when user-defined types from
-% the Erlang AST are transformed to our internal representation.
+% the Erlang AST are transformed to our internal representation,
+% or if some additional information has to be saved, e.g. when a type was originally a record expression 
+% and was transformed to a tuple expression inside the library.
 -type type_name() :: term(). %TODO decide the structure of type names
 
 % TODO doc
--type type_tbl() :: #{type() => ty()}.
+% to preserve type names, we add a possible indirection 
+% 1 => #record(field1 = ..., field2 = ...)
+% 2 => 1
+% where the name table will store
+% 1 => #record
+% cycles must be avoided
+% invariant: forall type, type_alt: id(type) != id(type_alt)
+-type type_tbl() :: #{type() => ty() | type_alt() => type()}.
  
 % We have at least four options for hash tables in Erlang that are efficient:
 % * ETS tables and its derivates
@@ -44,8 +55,6 @@
 
 % Names coming from user-defined types are stored in a separate table
 % A type can have multiple names associated because of sharing
-% TODO we want sharing, but for error messages we ideally don't want sharing
-% => this will lose information, discuss
 % 
 % example construction/transformation of a symbol table: 
 % predefined term: any()
@@ -58,10 +67,10 @@
 % -type custom_list() :: [any()]
 % 0 => [term]
 % 1 => [list, custom_list]
--type name_tbl() :: #{type() => [type_name()]}.
+-type name_tbl() :: #{type() => [type_name()], type_alt() => [type_name()]}.
 
 -record(ty, {
-  % the reference of this type
+  % the reference of this type, invariant: is never an id of type_alt()
   id = open :: integer() | open, 
 
   % * type variables are encoded in each part of the DNF separately
@@ -116,7 +125,7 @@
 -export([empty/0, any/0]).
 
 % structural check if a type is equivalent to Any; heuristic
--export([is_any/1]).
+-export([is_any_h/1]).
 
 % set-theoretic operators on types
 -export([negate/1, union/2, intersect/2, difference/2]).
@@ -244,8 +253,8 @@ is_empty(Type) ->
   end).
 
 % TODO in CDuce, is_any checks are used to keep the leafs of BDDs uniform; do we need this?
--spec is_any(type()) -> boolean().
-is_any(Type) -> case any() of Type -> true; _ -> false end.
+-spec is_any_h(type()) -> boolean().
+is_any_h(Type) -> case any() of Type -> true; _ -> false end.
 
 -spec is_subtype(type(), type()) -> boolean().
 is_subtype(Type1, Type2) ->
