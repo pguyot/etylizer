@@ -6,36 +6,77 @@
 % A macro to wrap some term in a closure to be evaluated lazily on-demand
 -define(F(Z), fun() -> Z end).
 
-% a type is a pointer to a corecursively defined type node
-% depending on the mechanism of detecting 'sameness' of types,
+% A type is a pointer to a co-recursively defined type node.
+% Depending on the mechanism of detecting 'sameness' of types,
 % multiple types with the same denotation can be mapped to the same reference.
 % For termination, it is necessary that the Any type and further that some simple boolean tautologies are shared.
 % The references start at 0 and increase monotonically.
-% Defining a new type can be done by requesting a the next free type reference, which also increases the reference counter by 1.
+% Defining a new type can be done by requesting the next free type reference, 
+% which also increases the reference counter by 1.
 % Such a new reference must be closed before it can be used.
+% 
 % If the newly requested type is found to be shared with a previously defined type, 
 % the number of the newly requested type is skipped.
+% There are a number of different sharing mechanisms:
+% 1) None (except Any and boolean tautologies)
+%   Every new type get a new ID, and every operation will create a new type
+% 2) Structural equivalence
+%   Upon creating a new type with the form NewID => Structure, 
+%   the previously created types OtherID => OtherStructure will be compared against
+%   and checked, if for some ID the structure matches, e.g. Structure =:= OtherStructure.
+%   If the new type is recursively defined, then the content will never match with a previously defined type,
+%   as a new ID is contained in the structure.
+%   Some examples:
+%   A = true | (A, A)
+%   is shared with
+%   B = true | (A, A)
+%   therefore mapping B => A.
+%   But not shared with
+%   C = true | (C, C)
+%   even though C is semantically equivalent to A.
+% 3) Structural equivalence up to reference renaming
+%   Here, A and C would be detected as equivalent and can be shared.
+%   Can be implemented as an automata equivalence check.
+% 4) Semantic equivalence
+%   An expensive mechanism where semantic equivalence is used to shared types.
+%   E.g.
+%   A = ((true, Empty), true)
+%   B = (true, (true, Empty))
+%   both A and B would be shared as they are semantically equivalent.
+% We currently implement mechanism 2).
 -type type() :: {ty_ref, integer()}.
-% type alt is only used if sharing is detected and denotes sharing by adding a type_alt => type mapping to the type table
+
+% type alt is used if sharing is detected and denotes sharing by adding a type_alt => type mapping to the type table
 -type type_alt() :: {ty_alt, integer()}.
 
 % In addition to the number, a type reference can optionally be 
 % equipped with a name. 
 % These names are used when user-defined types from
-% the Erlang AST are transformed to our internal representation,
+% the Erlang AST ('-type' annotations) are transformed to our internal representation,
 % or if some additional information has to be saved, e.g. when a type was originally a record expression 
 % and was transformed to a tuple expression inside the library.
--type type_name() :: term(). %TODO decide the structure of type names
+% TODO decide the structure of type names
+-type type_name() :: term(). 
 
-% TODO doc
-% to preserve type names, we add a possible indirection 
+% We use a mutable global state for efficiency reason.
+% The state is explicit and can be modified by any function.
+% The state keeps track of:
+% * The last used ID of a created type
+% * The type table, mapping type pointers to type records and shared type pointers to type pointers
+% * The alt type table, mapping shared type pointers to type pointers
+% * The hash table for type records to enable efficient structure sharing
+% * The name table, mapping types to previously seen aliases
+-record(s, {id = 0, type_tbl = #{}, hash_tbl = #{}, name_tbl = #{}}).
+-type s() :: #s{}.
+
+% To preserve type names, we add a possible indirection 
 % 1 => #record(field1 = ..., field2 = ...)
 % 2 => 1
 % where the name table will store
 % 1 => #record
-% cycles must be avoided
+% cycles are forbidden
 % invariant: forall type, type_alt: id(type) != id(type_alt)
--type type_tbl() :: #{type() => ty() | type_alt() => type()}.
+-type type_tbl() :: #{type() => ty(), type_alt() => type()}.
  
 % We have at least four options for hash tables in Erlang that are efficient:
 % * ETS tables and its derivates
@@ -45,12 +86,9 @@
 % Whereas implemeting a custom hash table in C would be the most efficient,
 % it's unfeasible and likely premature optimization.
 % A custom hash table in Erlang is much slower than the Erlang maps implementation which is implemented in C.
-% We can't use ETS tables (or similar) since we can't supply our own (constant-time) hash function for comparisons.
+% We can't use ETS tables (or similar) since we can't supply our own (constant-time) hash function and equivalence function for comparisons.
 % The hashing of deep type terms is too slow which ETS employs.
 % Maps in Erlang which are implemented in C and implement the fast hash array mapped tries can instead be used as a base for a custom hash-table implementation.
-% We keep these hash-tables in a global state.
-% The references to global hash-tables can be kept anywhere.
-% We put them in the process dictionary.
 -type hash_tbl() :: #{type() => ty()}.
 
 % Names coming from user-defined types are stored in a separate table
@@ -69,6 +107,7 @@
 % 1 => [list, custom_list]
 -type name_tbl() :: #{type() => [type_name()], type_alt() => [type_name()]}.
 
+% The internal representation of a full Erlang type.
 -record(ty, {
   % the reference of this type, invariant: is never an id of type_alt()
   id = open :: integer() | open, 
@@ -96,18 +135,18 @@
    
   % dynamic(), ?-type; we could include it in predef, 
   % but dynamic has some special interactions with other parts of the solver (tally, subtyping)
-  dynamic = unused, % TODO #DYNAMIC
+  % dynamic = unused, % TODO #DYNAMIC
 
   % Erlang bitstrings
   % <<E1, E2, ... En>>
-  bitstring = unused, % TODO #DYNAMIC
+  % bitstring = unused, % TODO #BITSTRING
 
   % unordered Erlang maps with optional and mandatory associations
   % #{t := t, t=> t}
-  map = unused % TODO #DYNAMIC
+  % map = unused % TODO #MAP
 }).
 -type ty() :: #ty{}.
--type open_ty() :: #ty{id :: open}. % TODO does this type spec mean what I think it does?
+-type open_ty() :: #ty{id :: open}.
 
 % Type API
 % The type api for coinductive types has two types of methods
@@ -118,8 +157,6 @@
 % otherwise the algorithm does not terminate.
 % The memoization of one chain is not allowed to be reused in 
 % another method (2.), a new chain must be started with its own memoization.
-% 
-% The state is always implicit and kept outside in a shared ETS table.
 
 % constructors for any and empty types, semantic
 -export([empty/0, any/0]).
@@ -159,24 +196,9 @@
 ]).
 
 
--type interval() :: term().
-%%-type ty_tuple() :: term().
-%%-type ty_function() :: term().
--type ty_variable() :: term().
--type ty_atom() :: term().
-
 % ======
 % IMPLEMENTATION
 % ======
-% 
-% The state is explicit and can be modified by any function
-% The state keeps track of:
-% * The next unused ID for a new type
-% * The type table, mapping type pointers to type records
-% * The hash table for type records to enable structure sharing
-% * The name table, mapping types to previously seen aliases
--record(s, {id = 0, type_tbl = #{}, hash_tbl = #{}, name_tbl = #{}}).
--type s() :: #s{}.
  
 % The top type is predefined, enforced to be shared and always mapped to reference 0.
 -spec any() -> type().
