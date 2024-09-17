@@ -8,7 +8,7 @@
 
 -export([empty/0, any/0]).
 -export([union/2, intersect/2, diff/2, negate/1, is_any/1]).
--export([is_empty/1, eval/1, normalize/5, substitute/4, to_line/1]).
+-export([is_empty/1, eval/1, normalize/5, substitute/4, to_line/1, print_ty/1]).
 
 -export([has_ref/2, predef/1, transform/2, all_variables/2]).
 
@@ -30,6 +30,15 @@ transform(All = [Predef | Others], Ops = #{union := U, any := A}) ->
     end.
 
 to_line(Predef) -> Predef.
+
+print_ty(Predef) -> 
+    case any() of
+        Predef -> epretty:text("predef()");
+        _ -> epretty:render_list(fun
+            ('[]') -> epretty:text('[]'); 
+            (Atom) -> epretty:text(atom_to_list(Atom) ++ "()") 
+        end, Predef)
+    end.
 
 transform_single(Predef, #{to_predef := P}) ->
     P(Predef).

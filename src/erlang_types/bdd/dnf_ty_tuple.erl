@@ -9,6 +9,8 @@
 
 -include("bdd_node.hrl").
 
+print_ty(Dnf) -> error(todoa).
+
 tuple(TyTuple) -> node(TyTuple).
 
 is_empty(TyBDD) ->

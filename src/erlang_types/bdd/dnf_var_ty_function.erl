@@ -14,6 +14,8 @@
 
 -include("bdd_var.hrl").
 
+print_ty(Dnf) -> error(todoa).
+
 function(Tuple) -> terminal(Tuple).
 var(Var) -> node(Var).
 

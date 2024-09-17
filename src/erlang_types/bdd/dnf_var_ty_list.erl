@@ -11,6 +11,8 @@
 
 -include("bdd_var.hrl").
 
+print_ty(Dnf) -> error(todoa).
+
 % fully generic
 list(List) -> terminal(List).
 var(Var) -> node(Var).

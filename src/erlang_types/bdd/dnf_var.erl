@@ -11,6 +11,8 @@
 
 -include("bdd_var.hrl").
 
+print_ty(Dnf) -> error(todoa).
+
 var(Var) -> node(Var).
 
 % partially generic

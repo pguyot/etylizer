@@ -13,6 +13,8 @@
 % implementations provided by bdd_var.hrl
 -include("bdd_var.hrl").
 
+print_ty(Dnf) -> error(todoa).
+
 tuple(Tuple) -> terminal(Tuple).
 var(Var) -> node(Var).
 

@@ -21,6 +21,8 @@
 
 -include("bdd_node.hrl").
 
+print_ty(Dnf) -> error(todoa).
+
 -spec function(ty_function()) -> dnf_ty_function().
 function(TyFunction) -> node(TyFunction).
 

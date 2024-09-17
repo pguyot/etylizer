@@ -1,7 +1,7 @@
 -module(ty_line).
 
 -define(debug, true).
--include_lib("sanity.hrl").
+-include_lib("../sanity.hrl").
 
 
 

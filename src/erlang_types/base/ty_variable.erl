@@ -4,6 +4,9 @@
 -export([setup_all/0, reset/0]).
 -define(VAR_ETS, variable_counter_ets_table).
 
+-export_type([type/0]).
+-opaque type() :: var().
+
 -export([equal/2, compare/2, substitute/4, has_ref/2, all_variables/2, name/1]).
 
 

@@ -24,6 +24,20 @@ to_line(Predef) ->
     fun(F1, F2) -> F1 ++ F2 end
   }).
 
+print_ty(PredefVarDnf) ->
+  dnf(PredefVarDnf, {
+    fun
+      (PVars,NVars,T) ->
+        TerminalDoc = ?TERMINAL:print_ty(T),
+        % P1 = ?TERMINAL:to_line(T),
+        % P2 = [?ELEMENT:to_line(V) || V <- P],
+        % P3 = [?ELEMENT:to_line(V) || V <- N],
+        % [{P2, P3, P1, []}]
+        TerminalDoc
+    end,
+    fun(Doc1, Doc2) -> epretty:beside(Doc1, Doc2) end
+  }).
+
 % generic
 predef(Predef) -> terminal(Predef).
 var(Var) -> node(Var).

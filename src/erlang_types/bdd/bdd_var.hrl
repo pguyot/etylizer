@@ -22,3 +22,7 @@ substitute({node, Var, Left, Right}, StdMap, Memo, MkTy) ->
       )
   end
 .
+
+% assumes that the ?TERMINAL of the VarDnf is another BDD
+vardnf(VarDnf) ->
+  error(todo3).

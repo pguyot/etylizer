@@ -14,6 +14,8 @@
 
 -include("bdd_var.hrl").
 
+print_ty(Dnf) -> error(todoa).
+
 to_line(DnfVar) ->
   dnf(DnfVar, {
     fun

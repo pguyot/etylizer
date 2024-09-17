@@ -11,6 +11,8 @@
 
 -include("bdd_var.hrl").
 
+print_ty(Dnf) -> error(todoa).
+
 int(Interval) -> terminal(Interval).
 var(Var) -> node(Var).
 

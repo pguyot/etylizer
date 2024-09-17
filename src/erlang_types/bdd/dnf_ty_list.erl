@@ -10,6 +10,8 @@
 
 -include("bdd_node.hrl").
 
+print_ty(Dnf) -> error(todoa).
+
 list(TyList) -> node(TyList).
 
 % partially generic
