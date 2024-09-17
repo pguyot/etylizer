@@ -1282,8 +1282,16 @@ multi_substitute_fun(DefaultFunction, AllFunctions, SubstituteMap, Memo) ->
 -include_lib("eunit/include/eunit.hrl").
 
 predef_any_test() ->
-  T = ty_rec:predef(),
-  io:format(user,"~s~n", [epretty:render(print(T))]),
+  "predef()" = epretty:render(print(ty_rec:predef())),
+
+  "predef()" = epretty:render(print(
+    ty_rec:intersect(ty_rec:predef(), ty_rec:variable(dnf_var_predef:var(ty_variable:new("alpha"))))
+  )),
+  % Z =  epretty:render(print(ty_rec:interval())),
+  % io:format(user,"type: ~s~n", [Z]),
+  % "integer()" = epretty:render(print(ty_rec:interval())),
+
+
   ok.
 
 recursive_definition_test() ->

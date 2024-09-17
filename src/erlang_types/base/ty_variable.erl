@@ -7,7 +7,7 @@
 -export_type([type/0]).
 -opaque type() :: var().
 
--export([equal/2, compare/2, substitute/4, has_ref/2, all_variables/2, name/1]).
+-export([print_ty/1, equal/2, compare/2, substitute/4, has_ref/2, all_variables/2, name/1]).
 
 
 -export([new/1, smallest/3, normalize/6, transform/2, get_new_id/0]).
@@ -95,6 +95,9 @@ substitute(MkTy, Var, Map, _Memo) ->
 
 all_variables(Var, _) -> [Var].
 transform(Ty, #{var := ToVar}) -> ToVar(Ty).
+
+print_ty(#var{id = Id, name = Name}) -> 
+  epretty:text(Name). % TODO variable printing, what to do with ID?
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

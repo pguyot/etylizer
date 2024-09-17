@@ -29,9 +29,8 @@ print_ty(PredefVarDnf) ->
     fun
       (PVars,NVars,T) ->
         TerminalDoc = ?TERMINAL:print_ty(T),
-        % P1 = ?TERMINAL:to_line(T),
-        % P2 = [?ELEMENT:to_line(V) || V <- P],
-        % P3 = [?ELEMENT:to_line(V) || V <- N],
+        P2 = [?ELEMENT:print_ty(V) || V <- PVars],
+        P3 = [?ELEMENT:print_ty(V) || V <- NVars],
         % [{P2, P3, P1, []}]
         TerminalDoc
     end,

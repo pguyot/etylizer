@@ -34,10 +34,10 @@ to_line(Predef) -> Predef.
 print_ty(Predef) -> 
     case any() of
         Predef -> epretty:text("predef()");
-        _ -> epretty:render_list(fun
-            ('[]') -> epretty:text('[]'); 
-            (Atom) -> epretty:text(atom_to_list(Atom) ++ "()") 
-        end, Predef)
+        _ -> epretty:sep_by(
+            epretty:text("U"),
+            lists:map(fun ('[]') -> epretty:text('[]'); (Atom) -> epretty:text(atom_to_list(Atom) ++ "()") end, Predef)
+        )
     end.
 
 transform_single(Predef, #{to_predef := P}) ->
