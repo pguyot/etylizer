@@ -13,7 +13,9 @@
 % hide built-in Erlang node function
 -compile({no_auto_import, [node/1]}).
 
--export([print_ty/1, has_ref/2, get_dnf/1, any/0, empty/0, equal/2, node/1, terminal/1, compare/2, union/2, intersect/2, negate/1, negate/2, diff/2]).
+-export([print_ty/1, has_ref/2, get_dnf/1, any/0, empty/0, equal/2, node/1, terminal/1, compare/2, union/2, intersect/2, intersect/3, negate/1, negate/2, diff/2]).
+
+-export([union/2, union/3, intersect/2, intersect/3, negate/1, negate/2, diff/2, diff/3]).
 
 % these are defined here so the IDE does not complain
 -ifndef(ELEMENT).
@@ -66,6 +68,7 @@ compare({node, E1, A1, B1}, {node, E2, A2, B2}) ->
     Res -> Res
   end.
 
+union(A, B, _M) -> union(A, B).
 union(A, B) ->
   case s_is_empty(A) of
     true -> B;
@@ -96,6 +99,8 @@ union(A, B) ->
       end
   end.
 
+% Memoization is not needed for BDDs
+intersect(A, B, _M) -> intersect(A, B).
 intersect(A, B) ->
   case s_is_any(A) of
     true -> B;
@@ -131,7 +136,7 @@ negate({terminal, A}) ->
   s({terminal, ?TERMINAL:negate(A)});
 negate({node, E, B1, B2}) -> s({node, E, s(negate(B1)), s(negate(B2))}).
 
-
+diff(A, B, _M) -> diff(A, B).
 diff(A, B) -> intersect(A, negate(B)).
 
 s_is_any({terminal, Ty}) -> ?TERMINAL:equal(Ty, ?TERMINAL:any());
@@ -144,15 +149,10 @@ is_empty_union(F1, F2) ->
   F1() andalso F2().
 
 get_dnf(Bdd) ->
-  lists:filter(
-    fun({_,_,[]}) -> false; ({_, _, T}) ->
-      case ?TERMINAL:empty() of
-        T -> false;
-        _ ->  true
-      end
-    end,
-    dnf(Bdd, {fun(P, N, T) -> [{P, N, T}] end, fun(C1, C2) -> C1() ++ C2() end})
-  ).
+  strict_dnf(Bdd, {
+    fun(P, N, T) -> [{P, N, T}] end, 
+    fun(C1, C2) -> C1 ++ C2 end
+  }).
 
 
 dnf(Bdd, {ProcessCoclause, CombineResults}) ->
@@ -174,9 +174,38 @@ do_dnf({node, Element, Left, Right}, F = {_Process, Combine}, Pos, Neg) ->
 do_dnf({terminal, Terminal}, {Proc, _Comb}, Pos, Neg) ->
   Proc(Pos, Neg, Terminal).
 
+strict_dnf(Bdd, {ProcessCoclause, CombineResults}) ->
+  do_strict_dnf(Bdd, {ProcessCoclause, CombineResults}, _Pos = [], _Neg = []).
+
+do_strict_dnf({node, Element, Left, Right}, F = {_Process, Combine}, Pos, Neg) ->
+  case {terminal, ?TERMINAL:any()} of
+    Left ->
+      F1 = do_dnf(Left, F, [Element | Pos], Neg),
+      F2 = do_dnf(Right, F, Pos, Neg),
+      case {F1, F2} of
+        {empty, empty} -> error(sanity);
+        {F1, empty} -> F1;
+        {empty, F2} -> F2;
+        _ -> Combine(F1, F2)
+      end;
+    _ ->
+      F1 = do_dnf(Left, F, [Element | Pos], Neg),
+      F2 = do_dnf(Right, F, Pos, [Element | Neg]),
+      case {F1, F2} of
+        {empty, empty} -> error(sanity);
+        {F1, empty} -> F1;
+        {empty, F2} -> F2;
+        _ -> Combine(F1, F2)
+      end
+  end;
+do_strict_dnf({terminal, Terminal}, {Proc, _Comb}, Pos, Neg) ->
+  case ?TERMINAL:empty() of
+    T -> empty;
+    _ -> Proc(Pos, Neg, Terminal)
+  end.
 
 has_ref(Ty, Ref) ->
-  dnf(Ty, {
+  strict_dnf(Ty, {
     fun
       (P,N,T) ->
         Fun = fun(F) -> ?ELEMENT:has_ref(F, Ref) end,
@@ -184,23 +213,24 @@ has_ref(Ty, Ref) ->
           lists:any(Fun, P) orelse
           lists:any(Fun, N)
     end,
-    fun(F1, F2) -> F1() orelse F2() end
+    fun
+      (F1, F2) -> F1() orelse F2() 
+    end
   }).
 
 all_variables(Ty, M) ->
-  dnf(Ty, {
+  strict_dnf(Ty, {
     fun
       (P,N,T) ->
         ?TERMINAL:all_variables(T, M) ++
           lists:foldl(fun(L, Acc) -> Acc ++ ?ELEMENT:all_variables(L, M) end, [], P) ++
           lists:foldl(fun(L, Acc) -> Acc ++ ?ELEMENT:all_variables(L, M) end, [], N)
     end,
-    fun(F1, F2) -> lists:usort(F1() ++ F2()) end
+    fun (Vars1, Vars2) -> lists:usort(Vars1 ++ Vars2) end
   }).
 
-
 transform(Ty, Ops = #{negate := Negate, intersect := Intersect, union := Union}) ->
-  dnf(Ty, {
+  strict_dnf(Ty, {
     fun
       (P,N,T) ->
         P1 = ?TERMINAL:transform(T, Ops),
@@ -208,5 +238,5 @@ transform(Ty, Ops = #{negate := Negate, intersect := Intersect, union := Union})
         P3 = [Negate(?ELEMENT:transform(V, Ops)) || V <- N],
         Intersect([P1] ++ P2 ++ P3)
     end,
-    fun(F1, F2) -> Union([F1(), F2()]) end
+    fun (F1, F2) -> Union([F1, F2]) end
   }).

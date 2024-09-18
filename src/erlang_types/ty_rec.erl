@@ -58,16 +58,10 @@
 % TODO decide the structure of type names
 -type type_name() :: term(). 
 
-% We use a mutable global state for efficiency reason.
-% The state is explicit and can be modified by any function.
-% The state keeps track of:
-% * The last used ID of a created type
-% * The type table, mapping type pointers to type records and shared type pointers to type pointers
-% * The alt type table, mapping shared type pointers to type pointers
-% * The hash table for type records to enable efficient structure sharing
-% * The name table, mapping types to previously seen aliases
--record(s, {id = 0, type_tbl = #{}, hash_tbl = #{}, name_tbl = #{}}).
--type s() :: #s{}.
+
+% 2 => [atom | 2]
+  % 1. (frischen) Eintrag im symbol machen
+  % 2. erlang AST erweitern
 
 % To preserve type names, we add a possible indirection 
 % 1 => #record(field1 = ..., field2 = ...)
@@ -202,6 +196,66 @@
   transform/2
 ]).
 
+% ======
+% GLOBAL STATE
+% ======
+
+% We use a mutable global state for efficiency reason.
+% The state is explicit and can be modified by any function.
+% The state keeps track of:
+% * The last used ID of a created type
+% * The type table, mapping type pointers to type records and shared type pointers to type pointers
+% * The alt type table, mapping shared type pointers to type pointers
+% * The hash table for type records to enable efficient structure sharing
+% * The name table, mapping types to previously seen aliases
+-record(s, {id = 0, type_tbl = #{}, hash_tbl = #{}, name_tbl = #{}}).
+-type s() :: #s{}.
+
+-spec get_state() -> s().
+get_state() ->
+  State = get(?MODULE),
+  case State of
+    undefined -> empty_state();
+    _ -> State
+  end.
+
+-spec empty_state() -> s().
+empty_state() ->
+  % define the Any type to be globally known
+  Any = {ty_ref, 0},
+  % we define the corecursive type and close it at the same time.
+  % in other representations, 
+  % we would need to define the Empty type at the same time since they are mutually recurive
+  % Any = (Empty -> Any) U ...
+  % Empty = !Any
+  % here, since all functions are represented as a default bdd_bool value 1,
+  % we don't need an explicitly defined Empty type
+  AnyRec = #ty{
+    id = 0,
+    predef = ?PREDEF:any(),
+    atom = ?ATOM:any(),
+    interval = ?INTERVAL:any(),
+    list = ?LIST:any(),
+    tuple = {dnf_var:any(), #{}},
+    function = {dnf_var:any(), #{}}
+  },
+
+  #s{
+    id = 1, 
+    type_tbl = #{Any => AnyRec}, 
+    name_tbl = #{Any => "Any"},
+    hash_tbl = #{hash(AnyRec) => [Any]}
+  }.
+
+-spec update_state(s()) -> ok.
+update_state(S) ->
+  put(?MODULE, S),
+  ok.
+new_id() -> 
+  (S = #s{id = Id}) = get_state(),
+  ok = update_state(S#s{id = Id + 1}),
+  Id.
+
 
 % ======
 % IMPLEMENTATION
@@ -280,7 +334,7 @@ union(A, B) ->
 %  3. Print all collected x_a references
 -spec print(type()) -> prettypr:doc().
 print(Type) -> 
-  % map accumulator for keeping type -> string mappings
+  % map accumulator for keeping type -> doc mappings
   {ok, TypeDocMap} = corec_state([Type], #{}, fun([Type], Unfolded, State, Memo) -> 
     case State of
       #{Type := Str} -> error(string_already_present_for_ty); % TODO this
@@ -612,7 +666,7 @@ corec(
   fun((unfoldable(), unfolded(), state(), memo()) -> {X, state()})
 ) -> {X, state()}.
 corec(Unfoldable, State, Memo, Continue) ->
- #s{type_tbl = Tys} = state(),
+ #s{type_tbl = Tys} = get_state(),
  case Memo of
   % memoization, terminate and return co-definition
    #{Unfoldable := Codefinition} -> Codefinition;
@@ -658,7 +712,7 @@ corec_state(Unfoldable, State, Memo, Continue) ->
   corec(Unfoldable, State, Memo, fun(Unfoldable, Unfolded, State, Memo) -> {Continue(Unfoldable, Unfolded, Memo), State} end).
 
 load(Ref = {ty_ref, Id}) ->
-  S = state(),
+  S = get_state(),
   #s{type_tbl = #{Ref := Ty}} = S,
   Ty.
 
@@ -669,7 +723,7 @@ store(OldTy = #ty{id = open}) ->
 % preconditions: 
 % id = open
 store(NewId, OldTy = #ty{id = open}) ->
-  (S = #s{hash_tbl = Htbl, type_tbl = Tys}) = state(),
+  (S = #s{hash_tbl = Htbl, type_tbl = Tys}) = get_state(),
   Ty = OldTy#ty{id = NewId},
   H = hash(Ty),
   case Htbl of
@@ -723,56 +777,6 @@ hash(#ty{id = Id}) ->
   true = (Id /= open),
   % bad hash function
   17.
-
--spec state() -> s().
-state() ->
-  State = get(state),
-  case State of
-    undefined -> empty_state();
-    _ -> State
-  end.
-
--spec empty_state() -> s().
-empty_state() ->
-  % define the Any type to be globally known
-  Any = {ty_ref, 0},
-  % we define the corecursive type and close it at the same time.
-  % in other representations, 
-  % we would need to define the Empty type at the same time since they are mutually recurive
-  % Any = (Empty -> Any) U ...
-  % Empty = !Any
-  % here, since all functions are represented as a default bdd_bool value 1,
-  % we don't need an explicitly defined Empty type
-  AnyRec = #ty{
-    id = 0,
-    predef = ?PREDEF:any(),
-    atom = ?ATOM:any(),
-    interval = ?INTERVAL:any(),
-    list = ?LIST:any(),
-    tuple = {dnf_var:any(), #{}},
-    function = {dnf_var:any(), #{}},
-    dynamic = bdd_bool:any(),
-    bitstring = bdd_bool:any(),
-    map = bdd_bool:any()
-  },
-
-  
-  #s{
-    id = 1, 
-    type_tbl = #{Any => AnyRec}, 
-    name_tbl = #{Any => "Any"},
-    hash_tbl = #{hash(AnyRec) => [Any]}
-  }.
-
--spec update_state(s()) -> ok.
-update_state(S) ->
-  put(state, S),
-  ok.
-
-new_id() -> 
-  (S = #s{id = Id}) = state(),
-  ok = update_state(S#s{id = Id + 1}),
-  Id.
 
 
 % type() -> type()
@@ -1282,11 +1286,14 @@ multi_substitute_fun(DefaultFunction, AllFunctions, SubstituteMap, Memo) ->
 -include_lib("eunit/include/eunit.hrl").
 
 predef_any_test() ->
-  "predef()" = epretty:render(print(ty_rec:predef())),
+  %"predef()" = epretty:render(print(ty_rec:predef())),
 
-  "predef()" = epretty:render(print(
-    ty_rec:intersect(ty_rec:predef(), ty_rec:variable(dnf_var_predef:var(ty_variable:new("alpha"))))
-  )),
+  Var = ty_rec:variable(ty_variable:new("alpha")),
+  Predef = ty_rec:predef(),
+  Intersect = ty_rec:intersect(Predef, Var),
+  "alpha & predef()" = epretty:render(print(Intersect)),
+
+  io:format(user,"type: ~n~s~n", [epretty:render(print(negate(Intersect)))]),
   % Z =  epretty:render(print(ty_rec:interval())),
   % io:format(user,"type: ~s~n", [Z]),
   % "integer()" = epretty:render(print(ty_rec:interval())),

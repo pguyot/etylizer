@@ -20,9 +20,4 @@ substitute({node, Var, Left, Right}, StdMap, Memo, MkTy) ->
         intersect(var(Var), LSub),
         intersect(negate(var(Var)), RSub)
       )
-  end
-.
-
-% assumes that the ?TERMINAL of the VarDnf is another BDD
-vardnf(VarDnf) ->
-  error(todo3).
+  end.

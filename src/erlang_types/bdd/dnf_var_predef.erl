@@ -3,7 +3,7 @@
 -define(ELEMENT, ty_variable).
 -define(TERMINAL, ty_predef).
 
--export([to_line/1, apply_to_node/3]).
+-export([apply_to_node/3]).
 -export([is_empty/1, normalize/3, substitute/4]).
 -export([var/1, predef/1,  all_variables/2, transform/2]).
 
@@ -12,29 +12,23 @@
 
 -include("bdd_var.hrl").
 
-to_line(Predef) ->
-  dnf(Predef, {
-    fun
-      (P,N,T) ->
-        P1 = ?TERMINAL:to_line(T),
-        P2 = [?ELEMENT:to_line(V) || V <- P],
-        P3 = [?ELEMENT:to_line(V) || V <- N],
-        [{P2, P3, P1, []}]
-    end,
-    fun(F1, F2) -> F1 ++ F2 end
-  }).
-
 print_ty(PredefVarDnf) ->
+  io:format(user,"Trying to DNF: ~p~n", [PredefVarDnf]),
   dnf(PredefVarDnf, {
     fun
       (PVars,NVars,T) ->
+        io:format(user,"GOT: ~p~n", [{PVars, NVars, T}]),
         TerminalDoc = ?TERMINAL:print_ty(T),
         P2 = [?ELEMENT:print_ty(V) || V <- PVars],
-        P3 = [?ELEMENT:print_ty(V) || V <- NVars],
-        % [{P2, P3, P1, []}]
-        TerminalDoc
+        P3 = [epretty:beside(epretty:text("!"), ?ELEMENT:print_ty(V)) || V <- NVars],
+        % TODO why " &" and not "&"?
+        epretty:sep_by(epretty:text(" &"), P2 ++ P3 ++ [TerminalDoc]) 
     end,
-    fun(Doc1, Doc2) -> epretty:beside(Doc1, Doc2) end
+    fun
+      (Doc, empty) -> Doc;
+      (empty, Doc) -> Doc;
+      (Doc1, Doc2) -> epretty:sep_by(epretty:text("|"), [Doc1(), Doc2()]) 
+    end
   }).
 
 % generic
