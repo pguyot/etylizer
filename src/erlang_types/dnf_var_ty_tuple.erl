@@ -23,10 +23,25 @@ mall_variables({Default, Others}, M) when is_map(Others) ->
   ));
 mall_variables(Ty, M) -> all_variables(Ty, M).
 
-normalize(Size, Ty, Fixed, M) -> dnf(Ty, {
-  fun(Pos, Neg, DnfTy) -> normalize_coclause(Size, Pos, Neg, DnfTy, Fixed, M) end,
-  fun constraint_set:meet/2
-}).
+normalize(Size, Ty, Fixed, M) -> 
+  {Time2, Sol2} = timer:tc(fun() -> 
+    dnf(Ty, {
+      fun(Pos, Neg, DnfTy) -> normalize_coclause(Size, Pos, Neg, DnfTy, Fixed, M) end,
+      fun constraint_set:meet/2
+    })
+  end),
+  {Time, Sol} = timer:tc(fun() -> 
+    Dnf = simplify(get_dnf(Ty)),
+    lists:foldl(fun({Pos, Neg, DnfTy}, Acc) -> 
+      OtherLazy = fun() -> normalize_coclause(Size, Pos, Neg, DnfTy, Fixed, M) end,
+      constraint_set:meet(Acc, OtherLazy)
+    end, [[]], Dnf)
+  end),
+  case Time > 1000 orelse Time2 > 1000 of
+    % true -> io:format(user,"~p vs ~p (~p)~n",[Time, Time2, Time/Time2]);
+    _ -> ok
+  end,
+  Sol.
 
 normalize_coclause(Size, PVar, NVar, Tuple, Fixed, M) ->
   case dnf_ty_tuple:empty() of
@@ -48,3 +63,9 @@ to_singletons(TyBDD) -> dnf(TyBDD, {
   fun(_Pos = [], _Neg = [], T) -> dnf_ty_tuple:to_singletons(T); (_, _, _) -> [] end,
   fun(F1, F2) -> F1() ++ F2() end
 }).
+
+
+simplify(Dnf) ->
+  %DnfFun = [{Pos, Neg, Fun}],
+  %[check_useless(F) || ],
+  Dnf.

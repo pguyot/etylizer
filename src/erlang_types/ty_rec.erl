@@ -2,7 +2,7 @@
 
 -define(F(Z), fun() -> Z end).
 
--export([empty/0, any/0]).
+-export([empty/0, any/0, of_function_dnf/4]).
 -export([union/2, negate/1, intersect/2, diff/2, is_any/1]).
 -export([is_empty/1, extract_variables/1]).
 
@@ -324,6 +324,15 @@ extract_variables(Ty = #ty{ predef = P, atom = A, interval = I, list = L, tuple 
 % ======
 % Type constructors
 % ======
+
+of_function_dnf(Pvars, Nvars, Pos, Neg) ->
+  ([F | _] = (Pos ++ Neg)),
+  Arity = length(ty_function:domains(F)),
+  L1 = [variable(T) || T <- Pvars],
+  L2 = [negate(variable(T)) || T <- Nvars],
+  L3 = [function(Arity, dnf_var_ty_function:function(dnf_ty_function:function(T))) || T <- Pos],
+  L4 = [negate(function(Arity, dnf_var_ty_function:function(dnf_ty_function:function(T)))) || T <- Neg],
+  lists:foldl(fun(E, Acc) -> intersect(E, Acc) end, any(), L1 ++ L2 ++ L3 ++ L4).
 
 -spec empty() -> ty_ref().
 empty() ->

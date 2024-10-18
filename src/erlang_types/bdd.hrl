@@ -13,7 +13,7 @@
 % hide built-in Erlang node function
 -compile({no_auto_import, [node/1]}).
 
--export([all_variables/1, has_ref/2, get_dnf/1, any/0, empty/0, equal/2, node/1, terminal/1, compare/2, union/2, intersect/2, negate/1, diff/2]).
+-export([all_variables/1, has_ref/2, to_dnf/1, get_dnf/1, any/0, empty/0, equal/2, node/1, terminal/1, compare/2, union/2, intersect/2, negate/1, diff/2]).
 
 % these are defined here so the IDE does not complain
 -ifndef(ELEMENT).
@@ -141,6 +141,18 @@ s_is_empty(_) -> false.
 
 is_empty_union(F1, F2) ->
   F1() andalso F2().
+
+to_dnf([]) -> ?TERMINAL:empty();
+to_dnf([{Pos, Neg} | Rest]) ->
+  P = [node(P) || P <- Pos],
+  N = [node(N) || N <- Neg],
+
+  Pclause = lists:foldl(fun(E, Acc) -> intersect(E, Acc) end, ?TERMINAL:any(), P),
+  Nclause = lists:foldl(fun(E, Acc) -> intersect(negate(E), Acc) end, ?TERMINAL:any(), N),
+  Clause = intersect(Pclause, Nclause),
+  union(Clause, to_dnf(Rest)).
+  
+
 
 get_dnf(Bdd) ->
   lists:filter(
