@@ -2,7 +2,7 @@
 
 -define(F(Z), fun() -> Z end).
 
--export([empty/0, any/0, of_function_dnf/4]).
+-export([empty/0, any/0, of_function_dnf/5, of_function_dnfs/2]).
 -export([union/2, negate/1, intersect/2, diff/2, is_any/1]).
 -export([is_empty/1, extract_variables/1]).
 
@@ -325,9 +325,12 @@ extract_variables(Ty = #ty{ predef = P, atom = A, interval = I, list = L, tuple 
 % Type constructors
 % ======
 
-of_function_dnf(Pvars, Nvars, Pos, Neg) ->
-  ([F | _] = (Pos ++ Neg)),
-  Arity = length(ty_function:domains(F)),
+of_function_dnfs(Arity, []) -> ty_rec:empty();
+of_function_dnfs(Arity, [{A, B, C, D} | Rest]) -> 
+  Ty = of_function_dnf(Arity, A, B, C, D),
+  union(Ty, of_function_dnfs(Arity, Rest)).
+
+of_function_dnf(Arity, Pvars, Nvars, Pos, Neg) ->
   L1 = [variable(T) || T <- Pvars],
   L2 = [negate(variable(T)) || T <- Nvars],
   L3 = [function(Arity, dnf_var_ty_function:function(dnf_ty_function:function(T))) || T <- Pos],
